@@ -18676,7 +18676,7 @@
   {
     "id": 20516,
     "type": 5,
-    "name": "作物516种子",
+    "name": "狗尾草种子",
     "interaction_type": "plant",
     "price_id": null,
     "price": 0,
@@ -18705,7 +18705,7 @@
   {
     "id": 20883,
     "type": 5,
-    "name": "作物883种子",
+    "name": "小红花种子",
     "interaction_type": "plant",
     "price_id": null,
     "price": 0,
@@ -18734,7 +18734,7 @@
   {
     "id": 25995,
     "type": 5,
-    "name": "作物5995种子",
+    "name": "芦苇种子",
     "interaction_type": "plant",
     "price_id": null,
     "price": 0,
@@ -18763,7 +18763,7 @@
   {
     "id": 29004,
     "type": 5,
-    "name": "作物9004种子",
+    "name": "泡泡棉花糖种子",
     "interaction_type": "plant",
     "price_id": null,
     "price": 0,
@@ -18792,7 +18792,7 @@
   {
     "id": 1040516,
     "type": 17,
-    "name": "黄金·作物516",
+    "name": "黄金·狗尾草",
     "interaction_type": null,
     "price_id": null,
     "price": 0,
@@ -18821,7 +18821,7 @@
   {
     "id": 1045995,
     "type": 17,
-    "name": "黄金·作物5995",
+    "name": "黄金·芦苇",
     "interaction_type": null,
     "price_id": null,
     "price": 0,
@@ -18850,7 +18850,7 @@
   {
     "id": 1049004,
     "type": 17,
-    "name": "黄金·作物9004",
+    "name": "黄金·泡泡棉花糖",
     "interaction_type": null,
     "price_id": null,
     "price": 0,

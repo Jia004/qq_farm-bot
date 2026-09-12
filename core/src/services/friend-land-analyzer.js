@@ -575,7 +575,10 @@ async function getFriendLandsDetail(gid) {
       const plantId = toNum(targetPlant.id);
       const plantName = getPlantNameOrNull(plantId) || targetPlant.name || getPlantName(plantId) || '未知';
       const plantInfo = getPlantById(plantId);
-      const seedId = toNum(plantInfo && plantInfo.seed_id);
+      let seedId = toNum(plantInfo && plantInfo.seed_id);
+      // 新作物回退：服务器下发的 plant.id = 1000000 + 种子ID（狗尾草 1020516 → 20516、芦苇 1025995、泡泡棉花糖 1029004）
+      if (!seedId && plantId > 1000000) seedId = plantId - 1000000;
+      if (!seedId && plantId >= 20000 && plantId < 100000) seedId = plantId;
       const seedImage = seedId > 0 ? getSeedImageBySeedId(seedId) : '';
       const plantSize = Math.max(1, toNum(plantInfo && plantInfo.size) || 1);
       const totalSeasons = Math.max(1, toNum(plantInfo && plantInfo.seasons) || 1);
