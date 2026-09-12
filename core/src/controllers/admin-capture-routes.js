@@ -913,7 +913,7 @@ function registerAdminCaptureRoutes({
   });
 
   // 抓包完成后「立即启动」：不等好友 GID 同步，直接启动/重启账号。
-  // 与自动启动的区别：立即生效；同时标记 manualStarted，抑制随后的延迟自动启动，避免重复启动。
+  // 与自动启动的区别：立即生效；两者共享 startHandled 标记，避免重复启动。
   app.post("/api/capture/sessions/:flowId/start-account", async (req, res) => {
     pruneRecentCaptures();
     const flowId = String(req.params.flowId || "");
