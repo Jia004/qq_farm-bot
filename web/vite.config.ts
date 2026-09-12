@@ -8,6 +8,9 @@ import viteCompression from 'vite-plugin-compression'
 
 const corePackageJson = JSON.parse(readFileSync('../core/package.json', 'utf-8'))
 
+// 后端面板端口：与 core 的 ADMIN_PORT 环境变量保持一致，默认 3900（3007 落在 Windows 端口排除区间会 EACCES）
+const ADMIN_PORT = Number(process.env.ADMIN_PORT) || 3900
+
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [
@@ -60,16 +63,16 @@ export default defineConfig({
   server: {
     proxy: {
       '/socket.io': {
-        target: 'http://localhost:3007',
+        target: `http://localhost:${ADMIN_PORT}`,
         changeOrigin: true,
         ws: true,
       },
       '/api': {
-        target: 'http://localhost:3007',
+        target: `http://localhost:${ADMIN_PORT}`,
         changeOrigin: true,
       },
       '/game-config': {
-        target: 'http://localhost:3007',
+        target: `http://localhost:${ADMIN_PORT}`,
         changeOrigin: true,
       },
     },

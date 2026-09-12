@@ -4,7 +4,8 @@ setlocal EnableExtensions
 cd /d "%~dp0"
 
 set "BOT_TITLE=QQ_FARM_BOT"
-set "BOT_PORT=3007"
+set "BOT_PORT=3900"
+if not "%ADMIN_PORT%"=="" set "BOT_PORT=%ADMIN_PORT%"
 set "PNPM_CMD="
 
 where pnpm >nul 2>nul
@@ -47,7 +48,7 @@ if not exist "%~dp0web\dist\index.html" (
 )
 
 echo [INFO] Opening QQ Farm console...
-start "%BOT_TITLE%" cmd /k "cd /d "%~dp0" && call %PNPM_CMD% -C core dev"
+start "%BOT_TITLE%" cmd /k "cd /d "%~dp0" && set "ADMIN_PORT=%BOT_PORT%" && call %PNPM_CMD% -C core dev"
 
 echo [OK] QQ Farm launch command sent.
 echo [INFO] Panel: http://localhost:%BOT_PORT%

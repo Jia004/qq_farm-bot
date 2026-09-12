@@ -38,7 +38,7 @@
 - 前端：Vue 3 / Vite / TypeScript / Pinia / UnoCSS（**全新重构 UI**）
 - 包管理：pnpm workspace
 - 部署：源码运行、Docker、二进制打包
-- 默认面板端口：`3007`
+- 默认面板端口：`3900`（原 3007 会命中 Windows 端口排除区间而 EACCES，见下文「如需修改端口」）
 - 默认管理员账号：`admin`
 - 默认管理员密码：`admin`
 
@@ -109,10 +109,12 @@ pnpm dev:core
 
 启动后访问：
 
-- 本机：`http://localhost:3007`
-- 局域网：`http://<你的IP>:3007`
+- 本机：`http://localhost:3900`
+- 局域网：`http://<你的IP>:3900`
 
 如需修改端口：
+
+> **Windows 端口排除区间提示**：3007 所在区间（3002-3101）常被 Hyper-V/WSL/NAT 动态保留，`listen` 会报 `EACCES: permission denied`（即使没有进程占用）。因此默认端口改为 3900（当前不在排除区间内）；若仍遇 EACCES，可先执行 `netsh interface ipv4 show excludedportrange protocol=tcp` 确认端口是否被系统保留，再换一个不在区间内的端口。
 
 ```powershell
 $env:ADMIN_PORT="你的新端口"
@@ -121,7 +123,7 @@ pnpm dev:core
 
 ## Docker 部署
 
-> **应用宝（yyb-go）已内置**：自本版本起，官方 `docker compose up -d --build` 构建的镜像**已包含应用宝 Go 服务（yyb-go）**，与 Node 主服务运行在**同一容器、共用 3007 端口**。Node 会把 `/api/yyb/*` 自动代理到容器内 yyb-go，你**无需再单独部署或填写应用宝接口地址**。若未显式设置 `YYB_API_TOKEN`，容器首次启动会**自动生成并持久化**一个 Token（同时作为 yyb-go 的 Bearer 鉴权与 Node 代理转发 Token），前端「应用宝」配置页自动预填，做到开箱即用；你也可以手动设置 `YYB_API_TOKEN` 覆盖默认值。
+> **应用宝（yyb-go）已内置**：自本版本起，官方 `docker compose up -d --build` 构建的镜像**已包含应用宝 Go 服务（yyb-go）**，与 Node 主服务运行在**同一容器、共用 3007 容器端口**（宿主映射默认 3900，可用 `PORT` 环境变量覆盖）。Node 会把 `/api/yyb/*` 自动代理到容器内 yyb-go，你**无需再单独部署或填写应用宝接口地址**。若未显式设置 `YYB_API_TOKEN`，容器首次启动会**自动生成并持久化**一个 Token（同时作为 yyb-go 的 Bearer 鉴权与 Node 代理转发 Token），前端「应用宝」配置页自动预填，做到开箱即用；你也可以手动设置 `YYB_API_TOKEN` 覆盖默认值。
 >
 > **注意**：二进制发布版（exe）与纯源码运行**不包含** yyb-go，仍需自行部署该 Go 服务并填写接口地址。
 

@@ -1,5 +1,8 @@
 const crypto = require("node:crypto");
+const fs = require("node:fs");
 const fetch = require("node-fetch");
+const { getDataFile } = require("../config/runtime-paths");
+const internalCapture = require("../capture/internal-capture");
 
 const CAPTURE_REQUEST_TIMEOUT_MS = 15_000;
 const CAPTURE_FLOW_TTL_MS = 15 * 60 * 1000;
@@ -58,12 +61,25 @@ function getCaptureBypassHosts(req) {
 
 function resolveCaptureConfig(store, override = {}) {
   const saved = store.getCaptureConfig();
-  return {
+  const config = {
     ...saved,
     ...override,
-    apiBase: normalizeApiBase(override.apiBase || saved.apiBase),
     apiToken: String(override.apiToken || saved.apiToken || "").trim(),
+    autoImportQqGids: override.autoImportQqGids !== undefined
+      ? override.autoImportQqGids !== false
+      : saved.autoImportQqGids !== false,
   };
+  if ((override.mode || saved.mode) === "external") {
+    config.mode = "external";
+    config.apiBase = normalizeApiBase(override.apiBase || saved.apiBase);
+    if (!config.apiToken) throw new Error("外部抓包服务需填写 API Token");
+    return config;
+  }
+  // 内置模式（默认）：apiBase 由内置服务动态分配
+  config.mode = "internal";
+  config.apiBase = internalCapture.getApiBase() || "";
+  if (!config.apiBase) throw new Error("内置抓包服务尚未就绪，请稍后重试");
+  return config;
 }
 
 async function captureRequest(config, path, options = {}) {
@@ -412,6 +428,19 @@ async function removeExistingOwnerFlows(store, owner) {
   }
 }
 
+/**
+ * 当前没有进行中的抓包流时，自动停掉内置代理监听，释放端口与内存。
+ */
+async function stopInternalProxyIfIdle(store) {
+  try {
+    const saved = store.getCaptureConfig();
+    if (saved.mode === "external") return;
+    const activeFlows = [...captureFlows.values()].filter((flow) => !flow.completed && !flow.cancelled);
+    if (activeFlows.length > 0) return;
+    await internalCapture.stopProxy();
+  } catch {}
+}
+
 async function cleanupExpiredFlows(store) {
   const cutoff = Date.now() - CAPTURE_FLOW_TTL_MS;
   const expired = [...captureFlows.values()].filter((flow) => flow.updatedAt < cutoff);
@@ -419,6 +448,7 @@ async function cleanupExpiredFlows(store) {
     if (!flow.completed) await stopRemoteFlow(store, flow);
     captureFlows.delete(flow.id);
   }
+  await stopInternalProxyIfIdle(store);
 }
 
 function registerAdminCaptureRoutes({
@@ -442,14 +472,25 @@ function registerAdminCaptureRoutes({
   app.get("/api/admin/capture-config", requireAdminRole, (req, res) => {
     try {
       const config = store.getCaptureConfig();
+      const internalStatus = internalCapture.getStatus();
       res.json({
         ok: true,
         data: {
           enabled: config.enabled === true,
+          mode: config.mode === "external" ? "external" : "internal",
           apiBase: config.apiBase,
           apiToken: "",
           tokenConfigured: !!config.apiToken,
           autoImportQqGids: config.autoImportQqGids !== false,
+          internal: {
+            running: internalStatus.running,
+            proxyRunning: internalStatus.proxyRunning,
+            apiPort: internalStatus.apiPort,
+            proxyPort: internalStatus.proxyPort,
+            caCreated: internalStatus.caCreated,
+            caFingerprint: internalStatus.caFingerprint,
+            lastError: internalStatus.lastError,
+          },
         },
       });
     } catch (error) {
@@ -478,13 +519,16 @@ function registerAdminCaptureRoutes({
     try {
       if (!requireDangerConfirmation(req, res, "UPDATE_CAPTURE_CONFIG")) return;
       const input = req.body || {};
-      const apiBase = normalizeApiBase(input.apiBase || store.DEFAULT_CAPTURE_CONFIG.apiBase);
+      const mode = input.mode === "external" ? "external" : "internal";
+      const apiBase = mode === "external"
+        ? normalizeApiBase(input.apiBase || store.DEFAULT_CAPTURE_CONFIG.apiBase)
+        : String(input.apiBase || store.DEFAULT_CAPTURE_CONFIG.apiBase).trim();
       const current = store.getCaptureConfig();
       const apiToken = String(input.apiToken || current.apiToken || "").trim();
-      if (input.enabled === true && !apiToken) {
-        return res.status(400).json({ ok: false, error: "启用前请填写 API Token" });
+      if (input.enabled === true && mode === "external" && !apiToken) {
+        return res.status(400).json({ ok: false, error: "启用外部抓包服务前请填写 API Token" });
       }
-      const data = store.setCaptureConfig({ ...input, apiBase, apiToken });
+      const data = store.setCaptureConfig({ ...input, mode, apiBase, apiToken });
       logger.warn("更新 Code/GID 抓取服务配置", {
         admin: req.currentUser?.username || "",
         enabled: data.enabled === true,
@@ -512,7 +556,10 @@ function registerAdminCaptureRoutes({
     res.json({
       ok: true,
       data: {
-        enabled: config.enabled === true && !!config.apiBase && !!config.apiToken,
+        enabled: config.enabled === true
+          && (config.mode === "external"
+            ? (!!config.apiBase && !!config.apiToken)
+            : !!internalCapture.getApiBase()),
       },
     });
   });
@@ -537,6 +584,8 @@ function registerAdminCaptureRoutes({
           return res.status(404).json({ ok: false, error: "目标账号不存在" });
         }
       }
+      // 内置模式先拉起服务与代理监听，再解析配置
+      await internalCapture.ensureProxyStarted(logger);
       const config = resolveCaptureConfig(store);
       if (!config.enabled) {
         return res.status(403).json({ ok: false, error: "抓包登录添加账号未启用" });
@@ -610,6 +659,20 @@ function registerAdminCaptureRoutes({
       return res.status(404).json({ ok: false, error: "证书链接不存在或已过期" });
     }
     try {
+      // 内置模式：直接读取本地 CA 文件，不走远端
+      const savedConfig = store.getCaptureConfig();
+      if (savedConfig.mode !== "external") {
+        await internalCapture.ensureStarted(logger);
+        const caStatus = internalCapture.getStatus();
+        const buffer = fs.readFileSync(getDataFile("capture-ca.pem"));
+        res.setHeader("Cache-Control", "no-store");
+        res.setHeader("Content-Type", "application/x-x509-ca-cert");
+        res.setHeader("Content-Disposition", 'inline; filename="mitmproxy-ca-cert.cer"');
+        if (caStatus.caCreated) {
+          res.setHeader("X-Capture-Ca-Created", "1");
+        }
+        return res.send(buffer);
+      }
       const config = resolveCaptureConfig(store);
       const certPath = String(flow.publicInfo?.certUrl || "/cert/mitmproxy-ca-cert.cer");
       if (!certPath.startsWith("/") || certPath.startsWith("//")) {
@@ -777,6 +840,11 @@ function registerAdminCaptureRoutes({
     captureFlows.delete(flow.id);
     res.json({ ok: true });
     scheduleRemoteStop(store, flow, 0, logger);
+  });
+
+  // 内置抓包服务状态（供管理面板展示运行状态 / CA 指纹）
+  app.get("/api/admin/capture-internal-status", requireAdminRole, (req, res) => {
+    res.json({ ok: true, data: internalCapture.getStatus() });
   });
 }
 

@@ -26,9 +26,9 @@ echo "==> 容器状态:"
 docker ps --filter name=qq-farm-bot --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
 
 echo "==> 健康检查 /api/status:"
-curl -s -m 10 http://localhost:3007/api/status || echo "(无法连接，请查看日志)"
+curl -s -m 10 http://localhost:3900/api/status || echo "(无法连接，请查看日志)"
 
 echo
-echo "==> 部署完成。面板地址: http://<服务器IP>:3007"
+echo "==> 部署完成。面板地址: http://<服务器IP>:3900"
 echo "==> 用手机微信扫描面板里的应用宝二维码添加主号，然后回来让我触发加好友实测。"
 echo "==> 查看日志: docker logs -f qq-farm-bot"

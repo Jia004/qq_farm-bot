@@ -2,7 +2,8 @@
 setlocal EnableExtensions
 
 set "BOT_TITLE=QQ_FARM_BOT"
-set "BOT_PORT=3007"
+set "BOT_PORT=3900"
+if not "%ADMIN_PORT%"=="" set "BOT_PORT=%ADMIN_PORT%"
 set "STOPPED=0"
 
 tasklist /v /fi "WINDOWTITLE eq %BOT_TITLE%" | findstr /i "%BOT_TITLE%" >nul 2>nul

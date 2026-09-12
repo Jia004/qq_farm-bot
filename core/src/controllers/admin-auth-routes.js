@@ -23,6 +23,21 @@ function getClientIp(req) {
   return remoteAddress || "unknown";
 }
 
+function isTrustedLocalIp(ip) {
+  // 免登录仅对可信来源开放：本机回环 + 局域网私网段（部署在公网时勿用此接口）
+  if (!ip) return false;
+  const clean = String(ip).replace(/^::ffff:/, "");
+  if (clean === "127.0.0.1" || clean === "::1" || clean === "localhost") return true;
+  const parts = clean.split(".");
+  if (parts.length !== 4) return false;
+  const a = Number(parts[0]);
+  const b = Number(parts[1]);
+  if (a === 10) return true;                 // 10.0.0.0/8
+  if (a === 172 && b >= 16 && b <= 31) return true; // 172.16.0.0/12
+  if (a === 192 && b === 168) return true;   // 192.168.0.0/16
+  return false;
+}
+
 function registerAdminAuthRoutes({
   app,
   logger,
@@ -31,6 +46,41 @@ function registerAdminAuthRoutes({
   createAdminSession,
   updateAdminSessions,
 }) {
+  // 本机/局域网免登录直登：仅对可信来源开放，自动以 admin 身份签发 token。
+  // 用于"打开面板直接进首页"，避免每次手动登录。公网部署请勿暴露此接口。
+  app.post("/api/auto-login", (req, res) => {
+    try {
+      const ip = getClientIp(req);
+      if (!isTrustedLocalIp(ip)) {
+        return res.status(403).json({ ok: false, error: "仅限本机或局域网访问" });
+      }
+      const users = userStore.getAllUsers();
+      const admin = users.find((u) => u.role === "admin" || u.role === "super_admin");
+      if (!admin) {
+        return res.status(500).json({ ok: false, error: "未找到管理员账号" });
+      }
+      const token = createAdminSession({
+        username: admin.username,
+        role: admin.role,
+        card: admin.card || null,
+        accountLimit: admin.accountLimit || userStore.DEFAULT_ACCOUNT_LIMIT || 2,
+      });
+      logger.info("免登录直登", { username: admin.username, ip });
+      return res.json({
+        ok: true,
+        data: {
+          token,
+          role: admin.role,
+          accountLimit: admin.accountLimit || userStore.DEFAULT_ACCOUNT_LIMIT || 2,
+          user: { username: admin.username },
+        },
+      });
+    } catch (error) {
+      logger.error("免登录直登失败", { error: error.message });
+      res.status(500).json({ ok: false, error: error.message });
+    }
+  });
+
   app.post("/api/login", (req, res) => {
     const { username, password } = req.body || {};
     const ip = getClientIp(req);

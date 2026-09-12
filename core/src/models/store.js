@@ -514,6 +514,7 @@ const DEFAULT_LOGIN_LINKS = {
 
 const DEFAULT_CAPTURE_CONFIG = {
     enabled: false,
+    mode: 'internal',
     apiBase: 'http://127.0.0.1:8450',
     apiToken: '',
     autoImportQqGids: true
@@ -907,6 +908,7 @@ function loadGlobalConfig() {
         if (data.captureConfig && typeof data.captureConfig === 'object') {
             globalConfig.captureConfig = {
                 enabled: data.captureConfig.enabled === true,
+                mode: data.captureConfig.mode === 'external' ? 'external' : 'internal',
                 apiBase: String(data.captureConfig.apiBase || DEFAULT_CAPTURE_CONFIG.apiBase).trim(),
                 apiToken: String(data.captureConfig.apiToken || '').trim(),
                 autoImportQqGids: data.captureConfig.autoImportQqGids !== false
@@ -1902,6 +1904,8 @@ function setCaptureConfig(config) {
     const current = getCaptureConfig();
     globalConfig.captureConfig = {
         enabled: config.enabled === true,
+        // mode=internal 时 apiBase 由内置服务动态分配，仅作为展示字段保留
+        mode: config.mode === 'external' ? 'external' : 'internal',
         apiBase: String(config.apiBase || current.apiBase || DEFAULT_CAPTURE_CONFIG.apiBase).trim(),
         apiToken: config.apiToken === undefined || config.apiToken === null || config.apiToken === ''
             ? current.apiToken

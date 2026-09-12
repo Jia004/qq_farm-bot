@@ -243,6 +243,70 @@ function registerAdminAccountRoutes({
     }
   });
 
+  // 更新账号 Code 并自动（重）连：被手机顶下线/离线重连时，
+  // 粘贴电脑抓包拿到的“新 Code”→ 更新账号 → 在线则用新 code 重启，离线则直接启动。
+  app.post("/api/accounts/:id/update-code", (req, res) => {
+    try {
+      const accountId =
+        resolveAccountReference(req.params.id) || String(req.params.id || "");
+      if (!canAccessAccount(req, accountId)) {
+        return res.status(403).json({ ok: false, error: "无权访问此账号" });
+      }
+      const rawCode = String((req.body && req.body.code) || "").trim();
+      // 容忍粘贴带 query 的完整 URL：自动抽取 code 参数
+      let code = rawCode;
+      const codeMatch = rawCode.match(/[?&]code=([^&]+)/i);
+      if (codeMatch && codeMatch[1]) {
+        try {
+          code = decodeURIComponent(codeMatch[1]);
+        } catch {
+          code = codeMatch[1];
+        }
+      }
+      code = code.trim();
+      if (!code) {
+        return res.status(400).json({ ok: false, error: "请填写 Code" });
+      }
+
+      const accounts = provider.getAccounts();
+      const existing = findAccountByRef(accounts.accounts || [], req.params.id);
+      if (!existing) {
+        return res.status(404).json({ ok: false, error: "账号不存在" });
+      }
+
+      const wasRunning = !!provider.isAccountRunning
+        && provider.isAccountRunning(accountId);
+
+      const nextAccount = {
+        ...existing,
+        id: accountId,
+        code,
+        loginType: existing.loginType || "manual",
+      };
+      addOrUpdateAccount(nextAccount);
+
+      // 无论在线/离线都让新 code 生效：在线重启（断开旧连接用新 code 连），离线直接启动
+      if (wasRunning) {
+        provider.restartAccount(accountId);
+      } else {
+        provider.startAccount(accountId);
+      }
+
+      if (provider.addAccountLog) {
+        provider.addAccountLog(
+          "update_code",
+          `更新 Code 并${wasRunning ? "重启" : "启动"}: ${existing.name || accountId}`,
+          accountId,
+          existing.name || "",
+        );
+      }
+
+      res.json({ ok: true, restarted: wasRunning });
+    } catch (error) {
+      res.status(500).json({ ok: false, error: error.message });
+    }
+  });
+
   app.delete("/api/accounts/:id", (req, res) => {
     try {
       const accountId =

@@ -3,7 +3,7 @@
 set -Eeuo pipefail
 
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-BOT_PORT="${ADMIN_PORT:-3007}"
+BOT_PORT="${ADMIN_PORT:-3900}"
 
 cd "$ROOT_DIR"
 
@@ -29,10 +29,14 @@ if [[ ! -d core/node_modules || ! -d web/node_modules ]]; then
 fi
 
 if [[ ! -f web/dist/index.html ]]; then
-  echo "[INFO] 正在构建前端..."
+  echo "[INFO] 构建前端需要 pnpm，构建完成后走已装的 core 依赖。"
+  echo "[INFO] 正在构建前端（若失败说明缺少 web 依赖，请先执行 pnpm install -r）..."
   "${PNPM[@]}" -C web build
 fi
 
 echo "[INFO] 正在启动 QQ 农场..."
 echo "[INFO] 面板：http://localhost:$BOT_PORT"
-exec env ADMIN_PORT="$BOT_PORT" "${PNPM[@]}" -C core dev
+# 注意：不走 pnpm，直接 exec node —— pnpm 会再派生一个 node 子进程后自己退出，
+# 导致 exec 失效、服务变孤儿进程；下次再 start 会重复拉起第二个实例（端口被占）。
+# core 的依赖（express/socket.io 等）在 pnpm install 时已软链进 core/node_modules，node 可直接解析。
+exec env ADMIN_PORT="$BOT_PORT" node core/client.js

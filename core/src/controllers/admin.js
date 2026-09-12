@@ -41,6 +41,7 @@ process.on("unhandledRejection", (reason, promise) => {
 });
 
 const { createModuleLogger } = require("../services/logger");
+const internalCapture = require("../capture/internal-capture");
 const { registerAdminActivityRoutes } = require("./admin-activity-routes");
 const {
   registerAdminAccountRuntimeRoutes,
@@ -370,7 +371,7 @@ function startAdminServer(dataProvider) {
   // 游戏 CDN 代理
   const CDN_BASE = 'https://cdn-resource.nqf.qq.com';
   const manifestPath = path.join(getResourcePath('gameConfig'), 'manifest.csv');
-  let seedCdnMap = new Map();
+  const seedCdnMap = new Map();
   try {
     if (fs.existsSync(manifestPath)) {
       const lines = fs.readFileSync(manifestPath, 'utf-8').split('\n');
@@ -705,12 +706,37 @@ function startAdminServer(dataProvider) {
     } catch {}
   };
 
-  const adminPort = CONFIG.adminPort || 3007;
-  server = app.listen(adminPort, "0.0.0.0", () => {
+  // 默认端口 3900：Windows 系统端口排除区间（Hyper-V/WSL NAT 保留 3002-3101）会拒绝 3007 监听（EACCES）
+  const adminPort = CONFIG.adminPort || 3900;
+  const server = app.listen(adminPort, "0.0.0.0", () => {
     adminLogger.info("admin panel started", {
-      url: `http://localhost:${  adminPort}`,
+      url: `http://localhost:${adminPort}`,
       port: adminPort,
     });
+    // 主服务就绪后预热内置抓包服务（fork 子进程 + 生成 CA），首次抓包登录时无需等待
+    const captureConfig = store.getCaptureConfig();
+    if (captureConfig.enabled && captureConfig.mode !== "external") {
+      internalCapture.ensureStarted(adminLogger).catch((error) => {
+        adminLogger.warn(`内置抓包服务预热失败（抓包登录功能暂不可用）: ${error.message}`);
+      });
+    }
+  });
+  // listen 失败（端口被占用 / 被系统排除区间保留 / 权限不足）时给出可操作的提示并优雅退出，
+  // 否则会以 unhandled 'error' event 直接抛栈崩溃（node:events:486），日志里毫无可读信息。
+  server.on("error", (err) => {
+    if (err && (err.code === "EADDRINUSE" || err.code === "EACCES")) {
+      console.error("");
+      console.error(`[AdminPanel] 端口 ${adminPort} 无法监听: ${err.code} (${err.message})`);
+      console.error(`  可能原因：1) 该端口已被占用  2) 落在 Windows 端口排除区间（运行`);
+      console.error(`  'netsh interface ipv4 show excludedportrange protocol=tcp' 可查看保留区间）`);
+      console.error(`  解决办法：换一个端口后重试，例如：`);
+      console.error(`    Windows PowerShell: $env:ADMIN_PORT=\"3901\"; pnpm dev:core`);
+      console.error(`    Linux/macOS:        ADMIN_PORT=3901 pnpm dev:core`);
+      console.error("");
+    } else {
+      console.error(`[AdminPanel] 端口 ${adminPort} 监听失败:`, err);
+    }
+    process.exit(1);
   });
   configureHttpServerTimeouts(server);
   trackHttpConnections(server);

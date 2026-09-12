@@ -10,7 +10,8 @@ services:
     container_name: qq-farm-bot
     restart: unless-stopped
     ports:
-      - "${PORT:-3007}:3007"
+      # 宿主机默认 3900（Windows 端口排除区间会拒绝 3007 监听）；容器内 Node 仍监听 3007
+      - "${PORT:-3900}:3007"
     volumes:
       - qq-farm-test-data:/app/core/data
       - qq-farm-test-logs:/app/core/data/logs

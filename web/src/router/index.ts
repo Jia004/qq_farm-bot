@@ -11,6 +11,29 @@ NProgress.configure({ showSpinner: false })
 const adminToken = useStorage('admin_token', '')
 let validatedToken = ''
 let validatingPromise: Promise<boolean> | null = null
+let autoLoginPromise: Promise<boolean> | null = null
+
+// 免登录：本机/局域网来源自动以管理员身份登录（后端校验来源 IP）
+// 失败（如公网/非信任来源/无管理员）时返回 false，走正常登录页。
+async function tryAutoLogin() {
+  if (adminToken.value) return true
+  if (autoLoginPromise) return autoLoginPromise
+  autoLoginPromise = axios.post('/api/auto-login', {}, {
+    timeout: 6000,
+  }).then((res) => {
+    const ok = !!(res.data && res.data.ok && res.data.data && res.data.data.token)
+    if (ok) {
+      adminToken.value = res.data.data.token
+      validatedToken = res.data.data.token
+      const userStore = useUserStore()
+      userStore.fetchUserInfo().catch(() => {})
+    }
+    return ok
+  }).catch(() => false).finally(() => {
+    autoLoginPromise = null
+  })
+  return autoLoginPromise
+}
 
 async function ensureTokenValid() {
   const token = String(adminToken.value || '').trim()
@@ -85,6 +108,9 @@ router.beforeEach(async (to) => {
   if (to.name === 'login') {
     if (!adminToken.value) {
       validatedToken = ''
+      // 本机/局域网免登录：能自动登录就直接进首页，不再展示登录页
+      const autoOk = await tryAutoLogin()
+      if (autoOk) return { name: 'dashboard' }
       return true
     }
     const valid = await ensureTokenValid()
@@ -92,11 +118,16 @@ router.beforeEach(async (to) => {
       return { name: 'dashboard' }
     adminToken.value = ''
     validatedToken = ''
+    const autoOk = await tryAutoLogin()
+    if (autoOk) return { name: 'dashboard' }
     return true
   }
 
   if (!adminToken.value) {
     validatedToken = ''
+    // 本机/局域网免登录：先尝试自动登录，成功直接进目标页
+    const autoOk = await tryAutoLogin()
+    if (autoOk) return true
     return { name: 'login' }
   }
 
@@ -104,6 +135,9 @@ router.beforeEach(async (to) => {
   if (!valid) {
     adminToken.value = ''
     validatedToken = ''
+    // 本机/局域网免登录：token 失效时先尝试自动登录
+    const autoOk = await tryAutoLogin()
+    if (autoOk) return true
     return { name: 'login' }
   }
 

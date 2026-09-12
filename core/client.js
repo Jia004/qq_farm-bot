@@ -1,4 +1,15 @@
 const process = require('node:process');
+const dns = require('node:dns');
+
+// DNS 兜底：部分 Windows 环境下 Node 的 c-ares 解析器读不到系统 DNS
+// （导致 gate-*.nqf.qq.com 出现 getaddrinfo ENOTFOUND），
+// 这里显式补充公共 DNS，避免游戏网关域名解析失败。
+try {
+    const servers = dns.getServers();
+    const fallback = ['114.114.114.114', '223.5.5.5', '8.8.8.8'];
+    const merged = [...new Set([...servers, ...fallback])];
+    dns.setServers(merged);
+} catch (_) { /* 忽略：设置失败时沿用系统默认 */ }
 
 const {
     startAdminServer,
