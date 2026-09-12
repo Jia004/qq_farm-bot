@@ -4,6 +4,7 @@ const path = require("node:path");
 const fetch = require("node-fetch");
 const { getDataFile, getResourcePath } = require("../config/runtime-paths");
 const internalCapture = require("../capture/internal-capture");
+const pcCapture = require("../capture/pc-capture");
 
 const CAPTURE_REQUEST_TIMEOUT_MS = 15_000;
 const CAPTURE_FLOW_TTL_MS = 15 * 60 * 1000;
@@ -218,6 +219,15 @@ function serializeFlow(flow) {
   return {
     id: flow.id,
     platform: flow.platform,
+    deviceMode: flow.deviceMode === "mobile" ? "mobile" : "pc",
+    pcStatus: {
+      supported: flow.pcStatus?.supported === true,
+      proxyActive: flow.pcStatus?.proxyActive === true,
+      caTrusted: flow.pcStatus?.caTrusted === true,
+      proxyPort: Number(flow.pcStatus?.proxyPort) || 0,
+      proxyServer: String(flow.pcStatus?.proxyServer || ""),
+      error: String(flow.pcStatus?.error || ""),
+    },
     codeCaptured: !!flow.code,
     accountGid: flow.accountGid,
     friendCount: flow.friendGids.size,
@@ -240,6 +250,12 @@ function serializeFlow(flow) {
 }
 
 async function stopRemoteFlow(store, flow) {
+  // PC 模式：无论远端释放是否成功，都先把系统代理还原，避免用户网络被挂在已关闭的端口上
+  if (flow.deviceMode !== "mobile") {
+    try {
+      await pcCapture.stopPcCapture();
+    } catch {}
+  }
   const config = resolveCaptureConfig(store);
   let lastError = null;
   for (let attempt = 1; attempt <= 3; attempt += 1) {
@@ -415,6 +431,12 @@ function scheduleCapturedAccountStart({
 
 async function stopCaptureBeforeAccountStart(store, flow, start) {
   await stopRemoteFlow(store, flow);
+  // PC 模式：账号开始前先恢复系统代理，避免游戏流量被指向已关闭的本地代理
+  if (flow.deviceMode !== "mobile") {
+    try {
+      await pcCapture.stopPcCapture();
+    } catch {}
+  }
   if (captureFlows.get(flow.id) === flow) captureFlows.delete(flow.id);
   start();
 }
@@ -568,6 +590,8 @@ function registerAdminCaptureRoutes({
   app.post("/api/capture/sessions", async (req, res) => {
     const owner = getFlowOwner(req.currentUser);
     const platform = req.body?.platform === "wx" ? "wx" : "qq";
+    // deviceMode: pc = 电脑端（自动设系统代理+信任CA）；mobile = 手机端（手动设 Wi-Fi 代理）
+    const deviceMode = req.body?.deviceMode === "mobile" ? "mobile" : "pc";
     try {
       if (!owner) return res.status(401).json({ ok: false, error: "未登录" });
       const accountRef = String(req.body?.accountId || "").trim();
@@ -586,7 +610,7 @@ function registerAdminCaptureRoutes({
         }
       }
       // 内置模式先拉起服务与代理监听，再解析配置
-      await internalCapture.ensureProxyStarted(logger);
+      const proxyPort = await internalCapture.ensureProxyStarted(logger);
       const config = resolveCaptureConfig(store);
       if (!config.enabled) {
         return res.status(403).json({ ok: false, error: "抓包登录添加账号未启用" });
@@ -607,6 +631,7 @@ function registerAdminCaptureRoutes({
         owner,
         accountId,
         platform,
+        deviceMode,
         code: "",
         accountGid: "",
         openId: "",
@@ -615,6 +640,7 @@ function registerAdminCaptureRoutes({
         friendListComplete: false,
         publicInfo: {},
         proxy: {},
+        pcStatus: { supported: false, proxyActive: false, caTrusted: false, proxyPort: 0 },
         captureStatus: "idle",
         completed: false,
         result: null,
@@ -631,9 +657,42 @@ function registerAdminCaptureRoutes({
           timeout: 30_000,
         });
         addCapturedValues(flow, started);
+        // PC 模式：抓包服务器就绪后，自动把 Windows 系统代理指向本机 MITM 端口 + 信任内置 CA
+        if (deviceMode === "pc" && proxyPort > 0) {
+          try {
+            const pcResult = await pcCapture.startPcCapture(
+              proxyPort,
+              getCaptureBypassHosts(req),
+            );
+            flow.pcStatus = {
+              supported: true,
+              proxyActive: true,
+              caTrusted: pcResult.caTrusted === true,
+              proxyPort,
+              proxyServer: pcResult.proxyServer || `127.0.0.1:${proxyPort}`,
+              error: pcResult.caError || "",
+            };
+            logger.info("PC 抓包已启用系统代理", {
+              owner,
+              proxyServer: pcResult.proxyServer,
+              caTrusted: pcResult.caTrusted === true,
+              port: proxyPort,
+            });
+          } catch (pcError) {
+            flow.pcStatus = {
+              supported: pcCapture ? true : false,
+              proxyActive: false,
+              caTrusted: false,
+              proxyPort,
+              error: pcError.message,
+            };
+            logger.warn("PC 抓包系统代理设置失败", { owner, error: pcError.message });
+          }
+        }
       } catch (error) {
         captureFlows.delete(flowId);
         await stopRemoteFlow(store, flow);
+        await pcCapture.stopPcCapture().catch(() => {});
         throw error;
       }
       res.json({ ok: true, data: serializeFlow(flow) });
@@ -840,12 +899,44 @@ function registerAdminCaptureRoutes({
     flow.cancelled = true;
     captureFlows.delete(flow.id);
     res.json({ ok: true });
+    // PC 模式：恢复系统代理（否则游戏/浏览器会持续走已关闭的代理端口）
+    if (flow.deviceMode !== "mobile") {
+      pcCapture.stopPcCapture()
+        .then(() => logger.info("PC 抓包已恢复系统代理"))
+        .catch((error) => logger.warn("PC 抓包恢复系统代理失败", { error: error.message }));
+    }
     scheduleRemoteStop(store, flow, 0, logger);
   });
 
   // 内置抓包服务状态（供管理面板展示运行状态 / CA 指纹）
   app.get("/api/admin/capture-internal-status", requireAdminRole, (req, res) => {
     res.json({ ok: true, data: internalCapture.getStatus() });
+  });
+
+  // PC 抓包环境状态（系统代理是否指向本机 / 内置 CA 是否已信任）
+  app.get("/api/admin/capture-pc-status", requireAdminRole, async (req, res) => {
+    try {
+      const status = internalCapture.getStatus();
+      const pc = await pcCapture.getPcStatus(status.proxyPort);
+      res.json({ ok: true, data: pc });
+    } catch (error) {
+      res.json({ ok: false, error: error.message });
+    }
+  });
+
+  // 一键修复 PC 抓包环境（信任 CA + 指向系统代理）
+  app.post("/api/admin/capture-pc-status/repair", requireAdminRole, async (req, res) => {
+    try {
+      const status = internalCapture.getStatus();
+      if (!status.proxyRunning || !status.proxyPort) {
+        await internalCapture.ensureProxyStarted(logger);
+      }
+      const proxyPort = internalCapture.getStatus().proxyPort;
+      const result = await pcCapture.startPcCapture(proxyPort, getCaptureBypassHosts(req));
+      res.json({ ok: true, data: { ...result, proxyPort } });
+    } catch (error) {
+      res.status(502).json({ ok: false, error: error.message });
+    }
   });
 
   // 已抓取的游戏资源列表（manifest.json / ASTC 图集等）

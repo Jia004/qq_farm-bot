@@ -18,6 +18,15 @@ const CAPTURE_SUCCESS_STORAGE_KEY = 'capture_login_succeeded'
 interface CaptureFlowState {
   id: string
   platform: 'qq' | 'wx'
+  deviceMode: 'pc' | 'mobile'
+  pcStatus: {
+    supported: boolean
+    proxyActive: boolean
+    caTrusted: boolean
+    proxyPort: number
+    proxyServer: string
+    error: string
+  }
   codeCaptured: boolean
   accountGid: string
   friendCount: number
@@ -46,10 +55,12 @@ const captureError = ref('')
 const captureCopiedField = ref<'host' | 'port' | ''>('')
 const captureAccountName = ref('')
 const capturePlatform = ref<'qq' | 'wx'>('qq')
+// pc = 电脑端（自动设系统代理+信任CA，无需手动操作）；mobile = 手机端（手动设 Wi-Fi 代理）
+const captureDeviceMode = ref<'pc' | 'mobile'>('pc')
+const captureFlow = ref<CaptureFlowState | null>(null)
 const showCaptureHelp = ref(false)
 const captureHelpMode = ref<'first' | 'daily'>('first')
 const captureHelpDevice = ref<'ios' | 'android'>('ios')
-const captureFlow = ref<CaptureFlowState | null>(null)
 
 const form = reactive({
   name: '',
@@ -57,24 +68,37 @@ const form = reactive({
   platform: 'qq' as 'qq' | 'wx',
 })
 
-const captureHelpSteps = computed(() => captureHelpMode.value === 'first'
-  ? [
-      '点击开始抓取，获取本次代理地址和端口',
-      '打开 CA 证书，并在手机系统中安装和信任',
-      '连续添加时，先切换到目标 QQ 并彻底关闭上一个农场',
-      '将手机 Wi-Fi 代理设置为页面显示的地址和端口',
-      '彻底关闭后重新打开对应的 QQ 或微信农场',
+const captureHelpSteps = computed(() => {
+  // 电脑端：全自动，无需手动设代理与证书
+  if (captureDeviceMode.value === 'pc') {
+    return [
+      '点击开始抓取：自动把系统代理指向本机，并把内置证书装进信任区',
+      '这一步同时适用于首次与日常使用，无需任何手动设置',
+      '连续添加时，先彻底关闭上一个农场页面，避免抓错账号',
+      '打开电脑 QQ 农场（小程序），即可自动捕获登录 Code',
       'Code 获取后账号会立即添加；QQ 好友 GID 将在后台继续同步',
-      'QQ 农场保持打开，完整好友列表同步后会立即释放代理，最迟约 15 秒',
+      '抓取结束后系统代理会自动恢复原设置',
     ]
-  : [
-      '点击开始抓取，确认本次代理地址和端口',
-      '连续添加时，先切换到目标 QQ 并彻底关闭上一个农场',
-      '将手机 Wi-Fi 代理更新为本次显示的地址和端口',
-      '重新打开对应农场，并保持页面打开',
-      '账号添加后，QQ 农场继续保持打开，最迟约 15 秒完成后台同步',
-      '后台同步结束后，将手机 Wi-Fi 代理改回关闭',
-    ])
+  }
+  return captureHelpMode.value === 'first'
+    ? [
+        '点击开始抓取，获取本次代理地址和端口',
+        '打开 CA 证书，并在手机系统中安装和信任',
+        '连续添加时，先切换到目标 QQ 并彻底关闭上一个农场',
+        '将手机 Wi-Fi 代理设置为页面显示的地址和端口',
+        '彻底关闭后重新打开对应的 QQ 或微信农场',
+        'Code 获取后账号会立即添加；QQ 好友 GID 将在后台继续同步',
+        'QQ 农场保持打开，完整好友列表同步后会立即释放代理，最迟约 15 秒',
+      ]
+    : [
+        '点击开始抓取，确认本次代理地址和端口',
+        '连续添加时，先切换到目标 QQ 并彻底关闭上一个农场',
+        '将手机 Wi-Fi 代理更新为本次显示的地址和端口',
+        '重新打开对应农场，并保持页面打开',
+        '账号添加后，QQ 农场继续保持打开，最迟约 15 秒完成后台同步',
+        '后台同步结束后，将手机 Wi-Fi 代理改回关闭',
+      ]
+})
 
 const captureDeviceSteps = computed(() => captureHelpDevice.value === 'ios'
   ? [
@@ -91,16 +115,25 @@ const captureDeviceSteps = computed(() => captureHelpDevice.value === 'ios'
 const captureCurrentStep = computed(() => {
   if (!captureFlow.value)
     return '开始新的抓取任务'
-  if (!captureFlow.value.codeCaptured)
+  if (!captureFlow.value.codeCaptured) {
+    if (captureFlow.value.deviceMode === 'pc') {
+      return `打开电脑 QQ 农场（${captureFlow.value.platform === 'qq' ? 'QQ' : '微信'}小程序），自动捕获登录`
+    }
     return `设置 Wi-Fi 代理并打开${captureFlow.value.platform === 'qq' ? ' QQ' : '微信'}农场`
+  }
   return '已获取 Code，正在立即完成账号操作'
 })
 
 const captureNextStep = computed(() => {
   if (!captureFlow.value)
-    return '开始后按本次显示的代理信息设置手机 Wi-Fi'
-  if (!captureFlow.value.codeCaptured)
-    return '重新打开小程序，并保持农场页面打开'
+    return captureDeviceMode.value === 'pc'
+      ? '点击开始后直接打开电脑 QQ 农场即可'
+      : '开始后按本次显示的代理信息设置手机 Wi-Fi'
+  if (!captureFlow.value.codeCaptured) {
+    return captureFlow.value.deviceMode === 'pc'
+      ? '保持农场页面打开，Code 会自动捕获'
+      : '重新打开小程序，并保持农场页面打开'
+  }
   if (captureFlow.value.platform === 'qq')
     return `即将自动${props.editData ? '更新' : '添加'}账号，好友 GID 将在后台同步`
   return `即将自动${props.editData ? '更新' : '添加'}账号`
@@ -157,6 +190,7 @@ async function startCaptureSession() {
     const { data } = await api.post('/api/capture/sessions', {
       platform: capturePlatform.value,
       accountId: props.editData?.id || '',
+      deviceMode: captureDeviceMode.value,
     }, { timeout: 35000 })
     if (!data?.ok || !data.data)
       throw new Error(data?.error || '启动抓取失败')
@@ -808,6 +842,35 @@ function resetYybQr() {
           />
 
           <div class="flex flex-col gap-1.5">
+            <label class="text-sm font-medium" :style="{ color: 'var(--theme-text)' }">抓包设备</label>
+            <div class="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                class="h-9 rounded-lg px-3 text-sm transition-colors"
+                :class="captureDeviceMode === 'pc' ? 'text-white' : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200'"
+                :style="captureDeviceMode === 'pc' ? { background: 'var(--theme-gradient)' } : {}"
+                :disabled="!!captureFlow"
+                @click="captureDeviceMode = 'pc'"
+              >
+                电脑（自动配置）
+              </button>
+              <button
+                type="button"
+                class="h-9 rounded-lg px-3 text-sm transition-colors"
+                :class="captureDeviceMode === 'mobile' ? 'text-white' : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200'"
+                :style="captureDeviceMode === 'mobile' ? { background: 'var(--theme-gradient)' } : {}"
+                :disabled="!!captureFlow"
+                @click="captureDeviceMode = 'mobile'"
+              >
+                手机（手动设代理）
+              </button>
+            </div>
+            <p v-if="captureDeviceMode === 'pc'" class="text-xs opacity-60" :style="{ color: 'var(--theme-text)' }">
+              开始后自动设置系统代理并信任证书，直接打开电脑 QQ 农场即可抓到登录信息
+            </p>
+          </div>
+
+          <div class="flex flex-col gap-1.5">
             <label class="text-sm font-medium" :style="{ color: 'var(--theme-text)' }">平台</label>
             <div class="grid grid-cols-2 gap-2">
               <button
@@ -885,7 +948,27 @@ function resetYybQr() {
               </div>
             </div>
 
-            <div class="grid grid-cols-2 gap-2 text-sm">
+            <!-- PC 模式：显示自动配置状态 -->
+            <div v-if="captureFlow.deviceMode === 'pc'" class="rounded-lg border border-gray-200 p-3 space-y-2 text-sm dark:border-gray-700">
+              <div class="flex items-center justify-between gap-3">
+                <span :style="{ color: 'var(--theme-text)' }">系统代理</span>
+                <span v-if="captureFlow.pcStatus.proxyActive" class="text-green-600 dark:text-green-400">
+                  已自动指向本机（{{ captureFlow.pcStatus.proxyServer || `127.0.0.1:${captureFlow.pcStatus.proxyPort}` }}）
+                </span>
+                <span v-else class="text-amber-600 dark:text-amber-400">
+                  未生效{{ captureFlow.pcStatus.error ? `：${captureFlow.pcStatus.error}` : '' }}
+                </span>
+              </div>
+              <div class="flex items-center justify-between gap-3">
+                <span :style="{ color: 'var(--theme-text)' }">证书信任</span>
+                <span :class="captureFlow.pcStatus.caTrusted ? 'text-green-600 dark:text-green-400' : 'text-amber-600 dark:text-amber-400'">
+                  {{ captureFlow.pcStatus.caTrusted ? '已自动安装到受信任区' : '未信任（可能影响抓包）' }}
+                </span>
+              </div>
+            </div>
+
+            <!-- 手机模式：显示手动代理信息 -->
+            <div v-else class="grid grid-cols-2 gap-2 text-sm">
               <div class="min-w-0 flex items-center justify-between gap-1 border border-gray-200 rounded-lg px-3 py-3 dark:border-gray-700">
                 <div class="min-w-0">
                   <div class="text-xs opacity-60" :style="{ color: 'var(--theme-text)' }">
@@ -945,6 +1028,7 @@ function resetYybQr() {
 
             <div class="sticky bottom-0 z-10 flex flex-wrap justify-end gap-2 border-t border-gray-200 px-4 py-3 -mx-4 dark:border-gray-700" :style="{ background: 'var(--theme-bg)' }">
               <BaseButton
+                v-if="captureFlow.deviceMode !== 'pc'"
                 variant="secondary"
                 size="sm"
                 :href="captureFlow.publicInfo.certificateUrl"

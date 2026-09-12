@@ -213,11 +213,59 @@ function shutdown() {
     }, 1000).unref?.();
 }
 
+/**
+ * 进程级安全网：抓包会话异常中断（崩溃/退出）时恢复系统代理，
+ * 避免用户网络被永久指向已关闭的本地端口。
+ * 注：exit 钩子里只能同步操作，这里用 PowerShell 同步还原备份设置。
+ */
+function installProxyRestoreGuards(logger = null) {
+    if (!isWin()) return;
+    let restored = false;
+    const restore = (reason) => {
+        if (restored) return;
+        restored = true;
+        try {
+            const systemProxy = require('./system-proxy');
+            if (!systemProxy.isEnabled()) return;
+            const { execFileSync } = require('node:child_process');
+            const backupPath = require('node:path').join(getDataDir(), 'capture-proxy-backup.json');
+            const script = [
+                `$ErrorActionPreference = 'SilentlyContinue'`,
+                `$b = Get-Content -Raw -LiteralPath '${backupPath.replace(/'/g, "''")}' | ConvertFrom-Json`,
+                `$p = 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings'`,
+                `Set-ItemProperty -Path $p -Name ProxyEnable -Value ([int]$b.proxyEnable) -Type DWord`,
+                `Set-ItemProperty -Path $p -Name ProxyServer -Value ([string]$b.proxyServer) -Type String`,
+                `Set-ItemProperty -Path $p -Name ProxyOverride -Value ([string]$b.proxyOverride) -Type String`,
+                `Remove-Item -LiteralPath '${backupPath.replace(/'/g, "''")}' -Force -ErrorAction SilentlyContinue`,
+            ].join('; ');
+            execFileSync('powershell.exe',
+                ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script],
+                { timeout: 8000, windowsHide: true });
+            logger?.warn?.(`[Capture] 进程退出（${reason}），已恢复系统代理`);
+        } catch (error) {
+            logger?.warn?.(`[Capture] 恢复系统代理失败: ${error.message}`);
+        }
+    };
+    process.once('SIGINT', () => restore('SIGINT'));
+    process.once('SIGTERM', () => restore('SIGTERM'));
+    process.once('exit', () => restore('exit'));
+}
+
+function getDataDir() {
+    const { getDataFile } = require('../config/runtime-paths');
+    return require('node:path').dirname(getDataFile('capture-ca.pem'));
+}
+
+function isWin() {
+    return process.platform === 'win32';
+}
+
 module.exports = {
     ensureStarted,
     ensureProxyStarted,
     getApiBase,
     getStatus,
+    installProxyRestoreGuards,
     stopProxy,
     shutdown,
 };

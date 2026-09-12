@@ -17,6 +17,8 @@ const {
     emitRealtimeLog,
     emitRealtimeAccountLog,
 } = require('./src/controllers/admin');
+const internalCapture = require('./src/capture/internal-capture');
+const systemProxy = require('./src/capture/system-proxy');
 const { createRuntimeEngine } = require('./src/runtime/runtime-engine');
 const { createModuleLogger } = require('./src/services/logger');
 const { verifyAndRun } = require('./src/services/license');
@@ -38,6 +40,18 @@ async function bootstrap() {
         process.exit(1);
         return;
     }
+
+    // 上次运行遗留的系统代理（抓包异常退出）在启动时自动还原
+    try {
+        if (systemProxy.isEnabled()) {
+            await systemProxy.disable();
+            mainLogger.warn('检测到上次抓包遗留的系统代理，已自动恢复');
+        }
+    } catch (error) {
+        mainLogger.warn(`恢复遗留系统代理失败: ${error.message}`);
+    }
+    // 进程退出安全网：抓包期间崩溃/退出时还原系统代理
+    internalCapture.installProxyRestoreGuards(mainLogger);
 
     const runtimeEngine = createRuntimeEngine({
         processRef: process,
