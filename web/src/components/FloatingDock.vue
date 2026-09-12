@@ -137,6 +137,13 @@ async function handleAccountSaved() {
   showRemarkModal.value = false
   accountToEdit.value = null
 }
+
+// 抓包成功/立即启动后：只刷新账号列表，不关闭弹窗（成功页要展示「立即启动」）
+async function handleAccountRefreshed(accountId?: string) {
+  await accountStore.fetchAccounts()
+  if (accountId)
+    accountStore.selectAccount(String(accountId))
+}
 </script>
 
 <template>
@@ -224,6 +231,7 @@ async function handleAccountSaved() {
         :edit-data="accountToEdit"
         @close="showAccountModal = false; accountToEdit = null"
         @saved="handleAccountSaved"
+        @refresh="handleAccountRefreshed"
       />
       <RemarkModal
         :show="showRemarkModal"

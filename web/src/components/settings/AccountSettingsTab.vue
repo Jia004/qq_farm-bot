@@ -35,6 +35,7 @@ const emit = defineEmits<{
   edit: [account: any]
   delete: [account: any]
   saved: []
+  refresh: [accountId: string]
   closeModal: []
   closeDeleteConfirm: []
   confirmDelete: []
@@ -229,6 +230,7 @@ function accountAvatar(acc: any) {
       :edit-data="editingAccount"
       @close="emit('closeModal')"
       @saved="emit('saved')"
+      @refresh="(accountId: string) => emit('refresh', accountId)"
     />
 
     <ConfirmModal

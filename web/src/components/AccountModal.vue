@@ -13,7 +13,7 @@ const props = defineProps<{
   defaultTab?: 'capture' | 'manual'
 }>()
 
-const emit = defineEmits(['close', 'saved'])
+const emit = defineEmits(['close', 'saved', 'refresh'])
 const CODE_QUERY_RE = /[?&]code=([^&]+)/i
 const CAPTURE_SUCCESS_STORAGE_KEY = 'capture_login_succeeded'
 
@@ -60,6 +60,13 @@ const capturePlatform = ref<'qq' | 'wx'>('qq')
 // pc = 电脑端（自动设系统代理+信任CA，无需手动操作）；mobile = 手机端（手动设 Wi-Fi 代理）
 const captureDeviceMode = ref<'pc' | 'mobile'>('pc')
 const captureFlow = ref<CaptureFlowState | null>(null)
+// 抓包成功后的结果：停在本弹窗提供「立即启动」，而不是直接退回主页
+const captureSuccess = ref<{ flowId: string, accountId: string, name: string, isUpdate: boolean } | null>(null)
+const captureStarting = ref(false)
+// 已通过「立即启动」成功启动（成功页显示已启动状态）
+const capturedStarted = ref(false)
+// 成功页状态文案（已启动 / 已被后台自动启动 / 已在运行中）
+const capturedStartNote = ref('')
 const showCaptureHelp = ref(false)
 const captureHelpMode = ref<'first' | 'daily'>('first')
 const captureHelpDevice = ref<'ios' | 'android'>('ios')
@@ -212,8 +219,9 @@ async function completeCaptureAccount() {
     return
   captureCompleting.value = true
   captureError.value = ''
+  const flowId = captureFlow.value.id
   try {
-    const { data } = await api.post(`/api/capture/sessions/${captureFlow.value.id}/complete`, {
+    const { data } = await api.post(`/api/capture/sessions/${flowId}/complete`, {
       name: captureAccountName.value.trim(),
     }, { timeout: 35000 })
     if (!data?.ok)
@@ -221,8 +229,19 @@ async function completeCaptureAccount() {
     localStorage.setItem(CAPTURE_SUCCESS_STORAGE_KEY, '1')
     stopCaptureCheck()
     captureFlow.value = null
-    emit('saved')
-    close()
+    // 不立即关闭：展示成功页，提供「立即启动」（后端已安排约 1.5s 后自动启动，
+    // 点按钮可立刻启动并抑制那次自动启动，避免重复）
+    captureSuccess.value = {
+      flowId,
+      accountId: String(data.data?.accountId || props.editData?.id || ''),
+      name: String(data.data?.name || captureAccountName.value.trim() || ''),
+      isUpdate: !!props.editData,
+    }
+    capturedStarted.value = false
+    capturedStartNote.value = ''
+    resumeSuccessPoll()
+    // 刷新账号列表（不关闭弹窗）；父组件可借此选中新账号
+    emit('refresh', captureSuccess.value.accountId)
   }
   catch (e: any) {
     if (e.response?.data?.code === 'DUPLICATE_CAPTURE_ACCOUNT') {
@@ -233,6 +252,56 @@ async function completeCaptureAccount() {
   }
   finally {
     captureCompleting.value = false
+  }
+}
+
+// 成功页轮询：检测后台自动启动是否已完成
+// （不点「立即启动」时，后端会在好友 GID 同步结束后自动启动账号）
+const { pause: pauseSuccessPoll, resume: resumeSuccessPoll } = useIntervalFn(async () => {
+  const success = captureSuccess.value
+  if (!success || capturedStarted.value || !success.accountId)
+    return
+  try {
+    const { data } = await api.get('/api/accounts')
+    const acc = (data?.data?.accounts || []).find((a: any) => String(a.id) === String(success.accountId))
+    if (acc?.running) {
+      capturedStarted.value = true
+      capturedStartNote.value = '后台已自动启动，正在登录游戏...'
+      pauseSuccessPoll()
+      emit('refresh', success.accountId)
+    }
+  }
+  catch {}
+}, 2500, { immediate: false })
+
+// 抓包成功后「立即启动」：不等好友 GID 后台同步完成
+async function startCapturedAccount() {
+  const success = captureSuccess.value
+  if (!success || captureStarting.value)
+    return
+  captureStarting.value = true
+  captureError.value = ''
+  try {
+    const { data } = await api.post(`/api/capture/sessions/${success.flowId}/start-account`, {}, { timeout: 20000 })
+    if (!data?.ok)
+      throw new Error(data?.error || '启动失败')
+    const started = data.data || {}
+    if (started.alreadyRunning)
+      capturedStartNote.value = '账号已在运行中'
+    else if (started.restarted)
+      capturedStartNote.value = '已重启，正在用最新登录信息连接...'
+    else
+      capturedStartNote.value = '已启动，正在登录游戏...'
+    capturedStarted.value = true
+    pauseSuccessPoll()
+    // 账号已启动：刷新账号列表让首页在线状态即时更新（不关闭弹窗）
+    emit('refresh', success.accountId)
+  }
+  catch (e: any) {
+    captureError.value = e.response?.data?.error || e.message || '启动失败，请到账号管理中启动'
+  }
+  finally {
+    captureStarting.value = false
   }
 }
 
@@ -347,9 +416,19 @@ async function submitManual() {
 
 function close() {
   stopCaptureCheck()
+  pauseSuccessPoll()
   void cancelCaptureSession()
   showCaptureHelp.value = false
+  captureSuccess.value = null
+  capturedStarted.value = false
+  capturedStartNote.value = ''
+  captureError.value = ''
   emit('close')
+}
+
+function closeAfterCapture() {
+  // 成功页的「完成」：账号已添加（可能已启动），关闭弹窗回到首页
+  close()
 }
 
 watch(() => props.show, (newVal) => {
@@ -357,6 +436,8 @@ watch(() => props.show, (newVal) => {
     errorMessage.value = ''
     captureError.value = ''
     captureCopiedField.value = ''
+    captureSuccess.value = null
+    capturedStarted.value = false
     captureAccountName.value = props.editData?.name || ''
     capturePlatform.value = props.editData?.platform === 'wx' ? 'wx' : 'qq'
     captureHelpMode.value = localStorage.getItem(CAPTURE_SUCCESS_STORAGE_KEY) === '1' ? 'daily' : 'first'
@@ -386,6 +467,7 @@ watch(() => props.show, (newVal) => {
   }
   else {
     stopCaptureCheck()
+    pauseSuccessPoll()
     void cancelCaptureSession()
   }
 })
@@ -441,6 +523,50 @@ watch(activeTab, (tab) => {
         </div>
 
         <div v-if="activeTab === 'capture'" class="space-y-4">
+          <!-- 抓包成功页：账号已添加，提供「立即启动」而不是直接退回主页 -->
+          <template v-if="captureSuccess">
+            <div class="flex flex-col items-center gap-3 py-2">
+              <div class="h-14 w-14 flex items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30">
+                <span class="i-carbon-checkmark-filled text-3xl text-green-600 dark:text-green-400" />
+              </div>
+              <div class="text-center">
+                <div class="text-base font-semibold" :style="{ color: 'var(--theme-text)' }">
+                  {{ captureSuccess.isUpdate ? '账号已更新' : '账号已添加' }}
+                </div>
+                <div class="mt-1 text-sm opacity-70" :style="{ color: 'var(--theme-text)' }">
+                  {{ captureSuccess.name || '抓取的账号' }}
+                </div>
+              </div>
+            </div>
+
+            <div v-if="!capturedStarted" class="rounded-lg px-3 py-3 text-xs leading-relaxed" style="background-color: color-mix(in srgb, var(--theme-primary) 10%, transparent); color: var(--theme-text);">
+              点「立即启动」马上开始运行；不点也没关系，系统会在后台同步好友后自动启动。
+            </div>
+            <div v-else class="rounded-lg bg-green-50 px-3 py-3 text-sm text-green-700 dark:bg-green-900/20 dark:text-green-300">
+              {{ capturedStartNote || '已启动，正在登录游戏...' }}
+            </div>
+
+            <div v-if="captureError" class="rounded-lg bg-red-50 p-3 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-300">
+              {{ captureError }}
+            </div>
+
+            <div class="flex flex-wrap justify-end gap-2 pt-1">
+              <BaseButton
+                v-if="!capturedStarted"
+                variant="primary"
+                :loading="captureStarting"
+                @click="startCapturedAccount"
+              >
+                <span class="i-carbon-play mr-1" />
+                立即启动
+              </BaseButton>
+              <BaseButton :variant="capturedStarted ? 'primary' : 'outline'" @click="closeAfterCapture">
+                {{ capturedStarted ? '完成' : '稍后再说' }}
+              </BaseButton>
+            </div>
+          </template>
+
+          <template v-else>
           <BaseInput
             v-model="captureAccountName"
             label="账号备注（可选）"
@@ -656,6 +782,7 @@ watch(activeTab, (tab) => {
                 {{ editData ? '立即更新' : '立即添加' }}
               </BaseButton>
             </div>
+          </template>
           </template>
         </div>
 

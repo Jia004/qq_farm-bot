@@ -144,6 +144,14 @@ export function useAccountSettings(showAlert: (message: string, type?: AlertType
     accountStore.fetchAccounts()
   }
 
+  // 抓包成功/立即启动后：刷新账号列表并选中该账号，但不关闭弹窗
+  // （成功页要继续展示「立即启动」按钮）
+  async function handleAccountRefreshed(accountId?: string) {
+    await accountStore.fetchAccounts()
+    if (accountId)
+      accountStore.selectAccount(String(accountId))
+  }
+
   function selectAccount(account: any) {
     if (!account || !account.id)
       return
@@ -209,6 +217,7 @@ export function useAccountSettings(showAlert: (message: string, type?: AlertType
     toggleAccount,
     refreshWxCodesNow,
     handleSaved,
+    handleAccountRefreshed,
     selectAccount,
     openClearStoppedConfirm,
     confirmClearStopped,

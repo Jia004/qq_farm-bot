@@ -16,6 +16,17 @@ const COMPLETE_QQ_FRIEND_SOURCES = new Set([
   "gamepb.friendpb.FriendService.SyncAll",
 ]);
 const captureFlows = new Map();
+// 已完成抓包的最后记录（flowId -> { flow, owner, updatedAt }）：
+// 抓包完成后流程可能很快从 captureFlows 移除（好友同步结束），
+// 这里保留引用一段时间，让「立即启动」按钮在成功后一段时间内仍可用。
+const recentCaptures = new Map();
+const RECENT_CAPTURE_TTL_MS = 10 * 60 * 1000;
+
+function pruneRecentCaptures(now = Date.now()) {
+  for (const [flowId, record] of recentCaptures) {
+    if (now - record.updatedAt > RECENT_CAPTURE_TTL_MS) recentCaptures.delete(flowId);
+  }
+}
 
 function isAdminUser(user) {
   return user && (user.role === "admin" || user.role === "super_admin");
@@ -408,7 +419,10 @@ function scheduleCapturedAccountStart({
   delayMs = CAPTURE_ACCOUNT_START_DELAY_MS,
   schedule = setTimeout,
 }) {
+  // 用户在前端点了「立即启动」时，取消这次延迟自动启动，避免重复启动。
   const timer = schedule(() => {
+    if (flow.startHandled) return;
+    flow.startHandled = true;
     try {
       if (isUpdate) {
         if (wasRunning) provider.restartAccount(account.id);
@@ -820,6 +834,8 @@ function registerAdminCaptureRoutes({
       if (!created) throw new Error("账号保存失败");
 
       flow.completed = true;
+      flow.isUpdate = isUpdate;
+      flow.wasRunning = wasRunning;
       flow.result = {
         accountId: created.id,
         name: created.name,
@@ -851,6 +867,9 @@ function registerAdminCaptureRoutes({
         updated: isUpdate,
       };
       flow.updatedAt = Date.now();
+      // 记录最近完成抓包：成功后一段时间内仍可通过 flowId 触发「立即启动」
+      pruneRecentCaptures();
+      recentCaptures.set(flow.id, { flow, owner: flow.owner, updatedAt: flow.updatedAt });
       res.json({ ok: true, data: flow.result });
       const startAccount = () => scheduleCapturedAccountStart({
         provider,
@@ -890,6 +909,74 @@ function registerAdminCaptureRoutes({
       res.status(500).json({ ok: false, error: error.message });
     } finally {
       flow.completing = false;
+    }
+  });
+
+  // 抓包完成后「立即启动」：不等好友 GID 同步，直接启动/重启账号。
+  // 与自动启动的区别：立即生效；同时标记 manualStarted，抑制随后的延迟自动启动，避免重复启动。
+  app.post("/api/capture/sessions/:flowId/start-account", async (req, res) => {
+    pruneRecentCaptures();
+    const flowId = String(req.params.flowId || "");
+    const owner = getFlowOwner(req.currentUser);
+    const flow = findOwnedFlow(flowId, req.currentUser)
+      || (() => {
+        // 抓包完成后流程可能已从 captureFlows 移除（好友同步结束），
+        // 从最近抓包记录兜底，保证成功页的按钮仍能工作。
+        const record = recentCaptures.get(flowId);
+        return record && record.owner === owner ? record.flow : null;
+      })();
+    if (!flow) return res.status(404).json({ ok: false, error: "抓取会话已过期，请在账号管理中启动该账号" });
+    const accountId = String(flow.result?.accountId || flow.accountId || "");
+    if (!flow.completed || !accountId) {
+      return res.status(400).json({ ok: false, error: "账号尚未添加，请先完成抓取" });
+    }
+    // 启动只处理一次：自动启动（延迟 1.5s）或「立即启动」二选一。
+    // 例外：若此前已处理但账号并未真正运行（例如自动启动失败），允许重试。
+    const alreadyRunning = !!(provider.isAccountRunning && provider.isAccountRunning(accountId));
+    if (flow.startHandled && alreadyRunning) {
+      return res.json({ ok: true, data: { started: false, alreadyRunning: true, accountId, name: flow.result?.name || "" } });
+    }
+    flow.startHandled = true;
+    try {
+      const account = store.getAccounts().accounts.find(
+        (item) => String(item.id) === accountId,
+      );
+      if (!account) return res.status(404).json({ ok: false, error: "账号已不存在" });
+
+      const isUpdate = flow.isUpdate === true;
+      const running = !!(provider.isAccountRunning && provider.isAccountRunning(accountId));
+
+      if (isUpdate) {
+        // 更新场景：无论此前是否在运行，都重启以让新 Code 生效
+        const ok = provider.restartAccount(accountId);
+        if (!ok) return res.status(500).json({ ok: false, error: "账号重启失败" });
+        if (provider.addAccountLog) {
+          provider.addAccountLog(
+            "start",
+            `抓包完成后立即重启: ${account.name || accountId}`,
+            accountId,
+            account.name || "",
+          );
+        }
+        return res.json({ ok: true, data: { started: true, restarted: true, accountId, name: account.name || "" } });
+      }
+
+      if (running) {
+        return res.json({ ok: true, data: { started: false, alreadyRunning: true, accountId, name: account.name || "" } });
+      }
+      const started = provider.startAccount(accountId);
+      if (!started) return res.status(500).json({ ok: false, error: "账号启动失败" });
+      if (provider.addAccountLog) {
+        provider.addAccountLog(
+          "start",
+          `抓包完成后立即启动: ${account.name || accountId}`,
+          accountId,
+          account.name || "",
+        );
+      }
+      res.json({ ok: true, data: { started: true, restarted: false, accountId, name: account.name || "" } });
+    } catch (error) {
+      res.status(500).json({ ok: false, error: error.message });
     }
   });
 

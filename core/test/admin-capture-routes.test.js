@@ -186,6 +186,58 @@ test('captured accounts start after the post-proxy delay', () => {
   assert.deepEqual(calls, [1500, 'account-1']);
 });
 
+test('manual start before the delay suppresses the scheduled auto start', () => {
+  const calls = [];
+  let scheduledCallback = null;
+  const flow = { owner: 'admin', result: { startError: '' } };
+
+  scheduleCapturedAccountStart({
+    provider: {
+      startAccount: accountId => calls.push(`start:${accountId}`),
+    },
+    logger: { warn() {} },
+    flow,
+    account: { id: 'account-1' },
+    isUpdate: false,
+    wasRunning: false,
+    schedule: (callback) => {
+      scheduledCallback = callback;
+      return null;
+    },
+  });
+
+  // 用户在延迟窗口内点了「立即启动」
+  flow.startHandled = true;
+  scheduledCallback();
+
+  assert.deepEqual(calls, [], '延迟自动启动应被手动启动抑制');
+});
+
+test('update flow restarts an account that was already running', () => {
+  const calls = [];
+  let scheduledCallback = null;
+  const flow = { owner: 'admin', result: { startError: '' } };
+
+  scheduleCapturedAccountStart({
+    provider: {
+      startAccount: accountId => calls.push(`start:${accountId}`),
+      restartAccount: accountId => calls.push(`restart:${accountId}`),
+    },
+    logger: { warn() {} },
+    flow,
+    account: { id: 'account-2' },
+    isUpdate: true,
+    wasRunning: true,
+    schedule: (callback) => {
+      scheduledCallback = callback;
+      return null;
+    },
+  });
+
+  scheduledCallback();
+  assert.deepEqual(calls, ['restart:account-2']);
+});
+
 test('complete QQ friend list sources are recognized', () => {
   assert.equal(isCompleteQqFriendSource('gamepb.friendpb.FriendService.GetAll'), true);
   assert.equal(isCompleteQqFriendSource('gamepb.friendpb.FriendService.SyncAll'), true);

@@ -39,6 +39,53 @@ export const useStatusStore = defineStore('status', () => {
 
   let socket: Socket | null = null
 
+  // —— 实时日志批量合并 ——
+  // WS 日志洪水（务农循环时每秒多条）若逐条 push，日志列表会持续全量重渲染。
+  // 这里先缓冲 200ms 再一次性合并，把重渲染频率封顶在 5 次/秒。
+  const LOG_FLUSH_INTERVAL_MS = 200
+  let pendingLogs: any[] = []
+  let pendingAccountLogs: any[] = []
+  let logFlushTimer: ReturnType<typeof setTimeout> | null = null
+
+  function scheduleLogFlush() {
+    if (logFlushTimer !== null)
+      return
+    logFlushTimer = setTimeout(() => {
+      logFlushTimer = null
+      flushPendingLogs()
+    }, LOG_FLUSH_INTERVAL_MS)
+  }
+
+  function flushPendingLogs() {
+    if (pendingLogs.length > 0) {
+      const base = logs.value
+      // 去重：HTTP 快照与 WS 推送可能包含同一条日志，按 ts+msg 过滤已有项
+      const recent = new Set<string>()
+      for (const item of base.slice(-500))
+        recent.add(`${item?.ts}|${item?.msg}`)
+      const fresh = pendingLogs.filter((item: any) => !recent.has(`${item?.ts}|${item?.msg}`))
+      pendingLogs = []
+      if (fresh.length > 0) {
+        const merged = base.concat(fresh)
+        logs.value = merged.length > 1000 ? merged.slice(-1000) : merged
+      }
+    }
+    if (pendingAccountLogs.length > 0) {
+      const merged = accountLogs.value.concat(pendingAccountLogs)
+      accountLogs.value = merged.length > 300 ? merged.slice(-300) : merged
+      pendingAccountLogs = []
+    }
+  }
+
+  function dropPendingLogs() {
+    pendingLogs = []
+    pendingAccountLogs = []
+    if (logFlushTimer !== null) {
+      clearTimeout(logFlushTimer)
+      logFlushTimer = null
+    }
+  }
+
   function getCurrentAccountId() {
     const accountStore = useAccountStore()
     return String((accountStore.currentAccountId as { value?: string })?.value ?? accountStore.currentAccountId ?? '')
@@ -91,18 +138,21 @@ export const useStatusStore = defineStore('status', () => {
     const next = normalizeLogEntry(entry)
     if (shouldHideLogEntryInFrontend(next))
       return
-    logs.value.push(next)
-    if (logs.value.length > 1000)
-      logs.value = logs.value.slice(-1000)
+    // 写入缓冲，200ms 后批量合并（避免逐条 push 触发高频全量重渲染）
+    pendingLogs.push(next)
+    if (pendingLogs.length > 500)
+      pendingLogs = pendingLogs.slice(-500)
+    scheduleLogFlush()
   }
 
   function pushRealtimeAccountLog(entry: any) {
     const next = (entry && typeof entry === 'object') ? entry : {}
     if (shouldHideLogEntryInFrontend(next))
       return
-    accountLogs.value.push(next)
-    if (accountLogs.value.length > 300)
-      accountLogs.value = accountLogs.value.slice(-300)
+    pendingAccountLogs.push(next)
+    if (pendingAccountLogs.length > 200)
+      pendingAccountLogs = pendingAccountLogs.slice(-200)
+    scheduleLogFlush()
   }
 
   function handleRealtimeStatus(payload: any) {
@@ -141,6 +191,7 @@ export const useStatusStore = defineStore('status', () => {
     if (currentRealtimeAccountId.value && accountId && accountId !== 'all' && accountId !== currentRealtimeAccountId.value)
       return
     const list = Array.isArray(body.logs) ? body.logs : []
+    dropPendingLogs()
     logs.value = list
       .map((item: any) => normalizeLogEntry(item))
       .filter((item: any) => !shouldHideLogEntryInFrontend(item))
@@ -149,6 +200,7 @@ export const useStatusStore = defineStore('status', () => {
   function handleRealtimeAccountLogsSnapshot(payload: any) {
     const body = (payload && typeof payload === 'object') ? payload : {}
     const list = Array.isArray(body.logs) ? body.logs : []
+    pendingAccountLogs = []
     accountLogs.value = currentRealtimeAccountId.value
       ? list
           .filter((item: any) => String(item?.accountId || item?.id || '') === currentRealtimeAccountId.value)

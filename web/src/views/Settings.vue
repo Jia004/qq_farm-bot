@@ -115,6 +115,7 @@ const {
   toggleAccount,
   refreshWxCodesNow,
   handleSaved,
+  handleAccountRefreshed,
   selectAccount,
   openClearStoppedConfirm,
   confirmClearStopped,
@@ -241,6 +242,7 @@ onMounted(async () => {
           @edit="openEditModal"
           @delete="handleDelete"
           @saved="handleSaved"
+          @refresh="handleAccountRefreshed"
           @close-modal="showModal = false"
           @close-delete-confirm="showDeleteConfirm = false"
           @confirm-delete="confirmDelete"

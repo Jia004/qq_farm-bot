@@ -90,6 +90,14 @@ async function handleAccountSaved() {
   await accountStore.fetchAccounts()
 }
 
+// 抓包成功/立即启动后：刷新账号列表并切到该账号，但保持弹窗打开
+// （成功页要继续展示「立即启动」，不能像 saved 那样直接关闭）
+async function handleAccountRefreshed(accountId?: string) {
+  await accountStore.fetchAccounts()
+  if (accountId)
+    accountStore.selectAccount(String(accountId))
+}
+
 // ===== 首页快捷抓包登录 =====
 // 打开账号选择弹层（选完账号直接进抓包）
 const showQuickAccountPicker = ref(false)
@@ -563,36 +571,18 @@ let localNextStealRemainSec = 0
 let localFarmTotalSec = 120
 let localHelpTotalSec = 180
 let localStealTotalSec = 120
-let lastUpdateTime = Date.now()
 
-// 圆环进度（requestAnimationFrame 实时驱动）
+// 圆环进度（由 1s 定时器驱动，不再用 60fps rAF：避免每帧写响应式 ref 导致首页持续重渲染）
 const farmPct = ref(0)
 const helpPct = ref(0)
 const stealPct = ref(0)
 
-function animateProgress() {
-  const now = Date.now()
-  const elapsed = (now - lastUpdateTime) / 1000
-  if (localNextFarmRemainSec > 0) {
-    const remain = Math.max(0, localNextFarmRemainSec - elapsed)
-    farmPct.value = localFarmTotalSec > 0 ? Math.min(1, remain / localFarmTotalSec) : 0
-  } else { farmPct.value = 0 }
-  if (localNextHelpRemainSec > 0) {
-    const remain = Math.max(0, localNextHelpRemainSec - elapsed)
-    helpPct.value = localHelpTotalSec > 0 ? Math.min(1, remain / localHelpTotalSec) : 0
-  } else { helpPct.value = 0 }
-  if (localNextStealRemainSec > 0) {
-    const remain = Math.max(0, localNextStealRemainSec - elapsed)
-    stealPct.value = localStealTotalSec > 0 ? Math.min(1, remain / localStealTotalSec) : 0
-  } else { stealPct.value = 0 }
-  requestAnimationFrame(animateProgress)
-}
-
-let rafStarted = false
-function startProgressAnimation() {
-  if (rafStarted) return
-  rafStarted = true
-  requestAnimationFrame(animateProgress)
+function updateProgressRings() {
+  // localNext*RemainSec 已由 1s 定时器每秒递减，这里直接用当前值算比例，
+  // 不再叠加 elapsed 差值（否则每秒被扣两次，圆环消耗速度翻倍）。
+  farmPct.value = localFarmTotalSec > 0 ? Math.min(1, Math.max(0, localNextFarmRemainSec / localFarmTotalSec)) : 0
+  helpPct.value = localHelpTotalSec > 0 ? Math.min(1, Math.max(0, localNextHelpRemainSec / localHelpTotalSec)) : 0
+  stealPct.value = localStealTotalSec > 0 ? Math.min(1, Math.max(0, localNextStealRemainSec / localStealTotalSec)) : 0
 }
 
 function resetDashboardState() {
@@ -703,6 +693,9 @@ function updateCountdowns() {
   else {
     nextStealCheck.value = '检查中...'
   }
+
+  // 圆环进度与倒计时同频刷新（1s 一次，替代原 60fps rAF）
+  updateProgressRings()
 }
 
 watch(status, (newVal) => {
@@ -717,9 +710,7 @@ watch(status, (newVal) => {
     localNextFarmRemainSec = newFarmRemain
     localNextHelpRemainSec = newHelpRemain
     localNextStealRemainSec = newStealRemain
-    lastUpdateTime = Date.now()
     updateCountdowns()
-    startProgressAnimation()
   }
 
   if (newVal?.uptime !== undefined)
@@ -1209,7 +1200,7 @@ useIntervalFn(updateCountdowns, 1000)
               <div class="relative flex items-center justify-center" style="width:78px;height:78px;">
                 <svg class="absolute inset-0 w-full h-full" viewBox="0 0 36 36" style="transform:rotate(-90deg);">
                   <circle cx="18" cy="18" r="15.5" fill="none" stroke="rgba(128,128,128,0.12)" stroke-width="4.5" />
-                  <circle cx="18" cy="18" r="15.5" fill="none" stroke="url(#violetGrad)" stroke-width="4.5" stroke-linecap="round" stroke-dasharray="97.4" :stroke-dashoffset="(97.4 * (1 - farmPct)).toFixed(2)" style="transition: stroke-dashoffset 0.3s linear;" />
+                  <circle cx="18" cy="18" r="15.5" fill="none" stroke="url(#violetGrad)" stroke-width="4.5" stroke-linecap="round" stroke-dasharray="97.4" :stroke-dashoffset="(97.4 * (1 - farmPct)).toFixed(2)" style="transition: stroke-dashoffset 0.9s linear;" />
                 </svg>
                 <div class="flex flex-col items-center leading-none">
                   <div class="text-xs font-bold tabular-nums" style="color:#a5b4fc;">{{ nextFarmCheck }}</div>
@@ -1222,7 +1213,7 @@ useIntervalFn(updateCountdowns, 1000)
               <div class="relative flex items-center justify-center" style="width:78px;height:78px;">
                 <svg class="absolute inset-0 w-full h-full" viewBox="0 0 36 36" style="transform:rotate(-90deg);">
                   <circle cx="18" cy="18" r="15.5" fill="none" stroke="rgba(128,128,128,0.12)" stroke-width="4.5" />
-                  <circle cx="18" cy="18" r="15.5" fill="none" stroke="url(#coralGrad)" stroke-width="4.5" stroke-linecap="round" stroke-dasharray="97.4" :stroke-dashoffset="(97.4 * (1 - helpPct)).toFixed(2)" style="transition: stroke-dashoffset 0.3s linear;" />
+                  <circle cx="18" cy="18" r="15.5" fill="none" stroke="url(#coralGrad)" stroke-width="4.5" stroke-linecap="round" stroke-dasharray="97.4" :stroke-dashoffset="(97.4 * (1 - helpPct)).toFixed(2)" style="transition: stroke-dashoffset 0.9s linear;" />
                 </svg>
                 <div class="flex flex-col items-center leading-none">
                   <div class="text-xs font-bold tabular-nums" style="color:#fdba74;">{{ nextHelpCheck }}</div>
@@ -1235,7 +1226,7 @@ useIntervalFn(updateCountdowns, 1000)
               <div class="relative flex items-center justify-center" style="width:78px;height:78px;">
                 <svg class="absolute inset-0 w-full h-full" viewBox="0 0 36 36" style="transform:rotate(-90deg);">
                   <circle cx="18" cy="18" r="15.5" fill="none" stroke="rgba(128,128,128,0.12)" stroke-width="4.5" />
-                  <circle cx="18" cy="18" r="15.5" fill="none" stroke="url(#emeraldGrad)" stroke-width="4.5" stroke-linecap="round" stroke-dasharray="97.4" :stroke-dashoffset="(97.4 * (1 - stealPct)).toFixed(2)" style="transition: stroke-dashoffset 0.3s linear;" />
+                  <circle cx="18" cy="18" r="15.5" fill="none" stroke="url(#emeraldGrad)" stroke-width="4.5" stroke-linecap="round" stroke-dasharray="97.4" :stroke-dashoffset="(97.4 * (1 - stealPct)).toFixed(2)" style="transition: stroke-dashoffset 0.9s linear;" />
                 </svg>
                 <div class="flex flex-col items-center leading-none">
                   <div class="text-xs font-bold tabular-nums" style="color:#6ee7b7;">{{ nextStealCheck }}</div>
@@ -1372,7 +1363,13 @@ useIntervalFn(updateCountdowns, 1000)
               筛选出 {{ allLogs.length }} 条日志
               <button class="ml-2 text-blue-500 underline hover:no-underline" @click="resetLogFilters">清除筛选</button>
             </div>
-            <div v-for="log in allLogs" :key="log.ts + log.msg" class="mb-1 break-all" :class="log.recovered ? 'opacity-45' : ''">
+            <div
+              v-for="log in allLogs"
+              :key="log.ts + log.msg"
+              v-memo="[log.time, log.tag, log.msg, log.recovered, log.meta?.event]"
+              class="mb-1 break-all"
+              :class="log.recovered ? 'opacity-45' : ''"
+            >
               <span class="mr-2 select-none text-gray-400">[{{ formatLogTime(log.time) }}]</span>
               <span class="mr-2 rounded px-1.5 py-0.5 text-xs font-bold" :class="getLogTagClass(log.tag)">{{ log.tag }}</span>
               <span v-if="log.meta?.event" class="mr-2 rounded bg-blue-50 px-1.5 py-0.5 text-xs text-blue-500 dark:bg-blue-900/20 dark:text-blue-400">{{ getEventLabel(log.meta.event) }}</span>
@@ -1469,6 +1466,7 @@ useIntervalFn(updateCountdowns, 1000)
       :default-tab="accountModalDefaultTab"
       @close="showAccountModal = false; accountToEdit = null; accountModalDefaultTab = undefined"
       @saved="handleAccountSaved"
+      @refresh="handleAccountRefreshed"
     />
     <CareerModal :show="showCareerModal" @close="showCareerModal = false" />
     <UpdateCodeModal
