@@ -206,7 +206,9 @@ function createRuntimeState(deps) {
 
             if (isWarn !== undefined && isWarn !== null && String(isWarn) !== '') {
                 const targetIsWarn = String(isWarn) === '1' || String(isWarn).toLowerCase() === 'true';
-                if (!!entry.isWarn !== targetIsWarn) return false;
+                // 错误级日志（tag=错误）同样视为警告级，保证「警告」筛选能覆盖全部异常
+                const entryIsWarn = !!entry.isWarn || String(entry.tag || '') === '错误';
+                if (entryIsWarn !== targetIsWarn) return false;
             }
 
             if (keywords.length > 0) {

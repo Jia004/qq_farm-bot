@@ -358,7 +358,7 @@ function parseLogTs(time: any): number {
 
 const allLogs = computed(() => {
   const sLogs = statusLogs.value || []
-  const aLogs = (statusAccountLogs.value || []).map((log: any) => ({
+  let aLogs = (statusAccountLogs.value || []).map((log: any) => ({
     ts: parseLogTs(log.ts ?? log.time),
     time: log.time,
     tag: log.action === 'Error' ? '错误' : '系统',
@@ -366,6 +366,27 @@ const allLogs = computed(() => {
     action: log.action,
     isAccountLog: true,
   }))
+
+  // 搜索/筛选激活时，账号操作日志也须按相同条件过滤，否则会混入不匹配的结果
+  if (hasActiveLogFilter.value) {
+    aLogs = aLogs.filter((log: any) => {
+      if (filter.event)
+        return false // 账号操作日志无 meta.event，事件筛选下不展示
+      if (filter.module && filter.module !== 'system' && filter.module !== 'task')
+        return false // 账号日志属于系统/任务范畴
+      if (filter.isWarn === 'warn' && log.tag !== '错误')
+        return false
+      if (filter.isWarn === 'info' && log.tag === '错误')
+        return false
+      if (filter.keyword) {
+        const kw = String(filter.keyword).trim().toLowerCase()
+        const text = `${log.msg || ''} ${log.tag || ''} ${log.action || ''}`.toLowerCase()
+        if (kw && !text.includes(kw))
+          return false
+      }
+      return true
+    })
+  }
 
   const merged = [...sLogs, ...aLogs]
     .sort((a: any, b: any) => (a.ts || 0) - (b.ts || 0))
@@ -393,34 +414,69 @@ const modules = [
   { label: '好友', value: 'friend' },
   { label: '仓库', value: 'warehouse' },
   { label: '任务', value: 'task' },
+  { label: '商城', value: 'mall' },
+  { label: '宠物', value: 'dog' },
+  { label: '神秘商人', value: 'mystery' },
   { label: '系统', value: 'system' },
 ]
 
+// 事件值必须与后端 core/src 中 meta.event 的实际值一致（中文事件 + 部分英文 key），
+// 否则筛选结果恒为空。修改后端事件名时需同步更新此处。
 const events = [
   { label: '全部事件', value: '' },
-  { label: '农场巡查', value: 'farm_cycle' },
-  { label: '收获作物', value: 'harvest_crop' },
-  { label: '清理枯枝', value: 'remove_plant' },
-  { label: '种植种子', value: 'plant_seed' },
-  { label: '施加化肥', value: 'fertilize' },
-  { label: '土地提醒', value: 'lands_notify' },
-  { label: '选择种子', value: 'seed_pick' },
-  { label: '购买种子', value: 'seed_buy' },
-  { label: '购买化肥', value: 'fertilizer_buy' },
-  { label: '开启礼盒', value: 'fertilizer_gift_open' },
-  { label: '获取任务', value: 'task_scan' },
-  { label: '完成任务', value: 'task_claim' },
+  // 农场
+  { label: '农场巡查', value: '农场循环' },
+  { label: '收获作物', value: '收获作物' },
+  { label: '铲除植物', value: '铲除植物' },
+  { label: '一键铲除', value: '一键铲除' },
+  { label: '种植种子', value: '种植种子' },
+  { label: '种植2x2作物', value: '种植2x2作物' },
+  { label: '施肥', value: '施肥' },
+  { label: '多季节施肥', value: '多季节施肥' },
+  { label: '催熟', value: '催熟' },
+  { label: '土地推送通知', value: '土地推送通知' },
+  { label: '选择种子', value: '选择种子' },
+  { label: '购买种子', value: '购买种子' },
+  { label: '购买化肥', value: '购买化肥' },
+  { label: '开启化肥礼包', value: '开启化肥礼包' },
+  { label: '升级土地', value: '升级土地' },
+  { label: '解锁土地', value: '解锁土地' },
+  { label: '进入农场', value: '进入农场' },
+  // 任务/奖励
+  { label: '扫描任务', value: '扫描任务' },
+  { label: '领取任务', value: '领取任务' },
+  { label: '扫描活跃奖励', value: '扫描活跃奖励' },
+  { label: '领取活跃奖励', value: '领取活跃奖励' },
+  { label: '图鉴奖励', value: '图鉴奖励' },
   { label: '免费礼包', value: 'mall_free_gifts' },
   { label: '分享奖励', value: 'daily_share' },
   { label: '会员礼包', value: 'vip_daily_gift' },
   { label: '月卡礼包', value: 'month_card_gift' },
-  { label: '图鉴奖励', value: 'illustrated_rewards' },
   { label: '邮箱领取', value: 'email_rewards' },
+  { label: '同气连枝礼包', value: '同气连枝礼包' },
+  { label: '领取同气礼包', value: '领取同气礼包' },
+  // 仓库/出售
   { label: '出售成功', value: 'sell_success' },
-  { label: '土地升级', value: 'upgrade_land' },
-  { label: '土地解锁', value: 'unlock_land' },
-  { label: '好友巡查', value: 'friend_cycle' },
-  { label: '访问好友', value: 'visit_friend' },
+  { label: '出售完成', value: 'sell_done' },
+  { label: '收获后出售', value: '收获后出售' },
+  { label: '偷菜后出售', value: '偷菜后出售' },
+  // 好友
+  { label: '好友巡查', value: '好友巡查循环' },
+  { label: '偷菜巡查', value: '偷菜巡查' },
+  { label: '偷好友菜', value: '偷好友菜' },
+  { label: '照顾好友', value: '照顾好友' },
+  { label: '帮助巡查', value: '帮助巡查' },
+  { label: '帮助好友', value: '帮助好友' },
+  { label: '护主犬好友巡查', value: '护主犬好友巡查' },
+  { label: '好友扫描', value: '好友扫描' },
+  { label: '刷新好友列表', value: '刷新好友列表' },
+  { label: '加黑名单', value: '加黑名单' },
+  { label: '删除好友', value: '删除好友' },
+  // 活动
+  { label: '观星领取', value: 'guanxing_claim' },
+  { label: '节气领取', value: 'solar_terms_claim' },
+  { label: '赛季通行证', value: 'season_passport_claim' },
+  { label: '青梅出售', value: 'qingmei_wine_sell' },
 ]
 
 const logLevels = [
@@ -775,6 +831,15 @@ function onLogFilterChange() {
 }
 
 function onLogSearchTrigger() {
+  refresh(true)
+}
+
+// 一键清除全部日志筛选条件
+function resetLogFilters() {
+  filter.module = ''
+  filter.event = ''
+  filter.keyword = ''
+  filter.isWarn = ''
   refresh(true)
 }
 
@@ -1289,13 +1354,23 @@ useIntervalFn(updateCountdowns, 1000)
 
           <div ref="logContainer" class="ui-subtle-panel max-h-[50vh] min-h-0 flex-1 overflow-y-auto rounded-lg p-4 text-sm leading-relaxed font-mono" @scroll="onLogScroll">
             <div v-if="!allLogs.length" class="py-8 text-center text-gray-400">
-              <div class="i-carbon-document-blank mx-auto mb-3 text-3xl text-gray-300" />
+              <div :class="hasActiveLogFilter ? 'i-carbon-search' : 'i-carbon-document-blank'" class="mx-auto mb-3 text-3xl text-gray-300" />
               <div class="text-sm text-gray-500 dark:text-gray-400">
-                暂无日志
+                {{ hasActiveLogFilter ? '没有匹配的日志' : '暂无日志' }}
               </div>
               <div class="mt-1 text-xs text-gray-400">
-                运行账号后，这里会持续追加巡查、种植、任务和出售记录。
+                <template v-if="hasActiveLogFilter">
+                  当前筛选条件没有结果，可换个关键词或
+                  <button class="text-blue-500 underline hover:no-underline" @click="resetLogFilters">清除全部筛选</button>
+                </template>
+                <template v-else>
+                  运行账号后，这里会持续追加巡查、种植、任务和出售记录。
+                </template>
               </div>
+            </div>
+            <div v-else-if="hasActiveLogFilter" class="mb-2 border-b border-gray-200/60 pb-2 text-xs text-gray-400 dark:border-gray-700/60">
+              筛选出 {{ allLogs.length }} 条日志
+              <button class="ml-2 text-blue-500 underline hover:no-underline" @click="resetLogFilters">清除筛选</button>
             </div>
             <div v-for="log in allLogs" :key="log.ts + log.msg" class="mb-1 break-all" :class="log.recovered ? 'opacity-45' : ''">
               <span class="mr-2 select-none text-gray-400">[{{ formatLogTime(log.time) }}]</span>
