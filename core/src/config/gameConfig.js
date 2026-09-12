@@ -393,6 +393,26 @@ function getItemImageById(itemId) {
         if (image) return image;
     }
 
+    // 2.5 黄金变异作物回退：asset_name 形如 gold/Crop_XXX（如 1040108 黄金·铃兰）
+    // 本地没有 104xxxx_Seed.png 时，回退到对应基础作物的种子/果实图（1040108 → Crop_108 → 20108）
+    {
+        const goldInfo = itemInfoMap.get(numericId);
+        const goldAsset = goldInfo && goldInfo.asset_name ? String(goldInfo.asset_name) : '';
+        const goldMatch = goldAsset.match(/^gold\/Crop_(\d+)$/i);
+        if (goldMatch) {
+            const crop = Number(goldMatch[1]) || 0;
+            if (crop > 0) {
+                image = tryGetImage(20000 + crop);
+                if (image) return image;
+                const basePlant = getPlantByFruitId(40000 + crop);
+                if (basePlant && basePlant.seed_id) {
+                    image = tryGetImage(basePlant.seed_id);
+                    if (image) return image;
+                }
+            }
+        }
+    }
+
     // 3. 查找装扮道具图片映射
     const skinImg = skinDetailImageMap.get(numericId);
     if (skinImg) return skinImg;

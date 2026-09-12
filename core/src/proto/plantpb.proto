@@ -189,6 +189,8 @@ message FarmingReply {
 
 message FarmingResult {
     int64 land_id = 1;
+    // 抓包实测：回包 field 2 携带本次务农获得的奖励物品（如清除黄金虫奖励 720 经验）
+    repeated corepb.Item items = 2;
 }
 
 // --- 除草 ---

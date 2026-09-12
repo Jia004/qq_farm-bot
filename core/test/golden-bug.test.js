@@ -27,8 +27,8 @@ test.before(async () => {
 test('farming reply decodes the captured 720 exp golden bug clear reward', () => {
   const reply = proto.farmingReply.decode(Buffer.from('1a0a0801120608cd0810d005', 'hex'));
 
-  assert.equal(Number(reply.social_rewards[0].items[0].id), 1101);
-  assert.equal(Number(reply.social_rewards[0].items[0].count), 720);
+  assert.equal(Number(reply.results[0].items[0].id), 1101);
+  assert.equal(Number(reply.results[0].items[0].count), 720);
 });
 
 test('golden bug request matches the captured client payload', () => {
