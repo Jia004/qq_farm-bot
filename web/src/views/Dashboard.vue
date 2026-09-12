@@ -47,6 +47,8 @@ const { dashboardItems } = storeToRefs(bagStore)
 const showAccountDropdown = ref(false)
 const showAccountModal = ref(false)
 const showCareerModal = ref(false)
+// 首页快捷抓包：默认打开"抓包登录"标签
+const accountModalDefaultTab = ref<'capture' | 'manual' | undefined>(undefined)
 // —— 更新 Code 并重连 ——
 const showUpdateCodeModal = ref(false)
 const appStore = useAppStore()
@@ -65,6 +67,7 @@ function openCareerModal() {
 // 关闭下拉（点击外部）
 onMounted(() => {
   document.addEventListener('click', closeAccountDropdown)
+  document.addEventListener('click', closeQuickPicker)
   // 初始化主题
   if (localStorage.getItem('theme-override') === 'dark') {
     document.documentElement.classList.add('dark')
@@ -72,6 +75,7 @@ onMounted(() => {
 })
 onUnmounted(() => {
   document.removeEventListener('click', closeAccountDropdown)
+  document.removeEventListener('click', closeQuickPicker)
 })
 function closeAccountDropdown(e: MouseEvent) {
   const el = (e.target as HTMLElement)
@@ -80,7 +84,53 @@ function closeAccountDropdown(e: MouseEvent) {
 async function handleAccountSaved() {
   showAccountModal.value = false
   accountToEdit.value = null
+  accountModalDefaultTab.value = undefined
   await accountStore.fetchAccounts()
+}
+
+// ===== 首页快捷抓包登录 =====
+// 打开账号选择弹层（选完账号直接进抓包）
+const showQuickAccountPicker = ref(false)
+
+function openQuickCapture() {
+  // 再点一次收起来
+  if (showQuickAccountPicker.value) {
+    showQuickAccountPicker.value = false
+    return
+  }
+  // 账号数 > 1 时先让用户选账号（抓到的 code 会更新到该账号）
+  if (accountStore.accounts.length > 1) {
+    showQuickAccountPicker.value = true
+    return
+  }
+  // 单个账号：直接定位到它
+  if (accountStore.accounts.length === 1) {
+    accountToEdit.value = accountStore.accounts[0]
+  }
+  accountModalDefaultTab.value = 'capture'
+  showAccountModal.value = true
+}
+
+function pickAccountForCapture(acc: any) {
+  accountStore.setCurrentAccount(acc)
+  accountToEdit.value = acc
+  accountModalDefaultTab.value = 'capture'
+  showQuickAccountPicker.value = false
+  showAccountModal.value = true
+}
+
+function quickCaptureAsNew() {
+  // 不关联已有账号：新增账号流程（抓到后作为新账号添加）
+  accountToEdit.value = null
+  accountModalDefaultTab.value = 'capture'
+  showQuickAccountPicker.value = false
+  showAccountModal.value = true
+}
+
+function closeQuickPicker(e: MouseEvent) {
+  const el = e.target as HTMLElement
+  if (!el.closest('[data-quick-capture]'))
+    showQuickAccountPicker.value = false
 }
 
 // 一键启动
@@ -858,7 +908,54 @@ useIntervalFn(updateCountdowns, 1000)
               <div class="i-fas-user-circle text-blue-500" />
               <span class="text-sm font-semibold text-gray-700 dark:text-gray-200">QQ农场智能助手</span>
             </div>
-                        <button
+            <!-- 快捷抓包登录（选账号后直接抓，无需进账号管理）-->
+            <div data-quick-capture class="relative shrink-0 mr-2">
+              <button
+                class="h-8 flex items-center gap-1 rounded-full px-3 text-xs font-medium text-white transition-transform active:scale-95"
+                :style="{ background: 'var(--theme-gradient)' }"
+                title="抓包登录（选账号后直接抓取登录 Code）"
+                @click.stop="openQuickCapture"
+              >
+                <span class="i-carbon-qr-code text-sm" />
+                抓包登录
+              </button>
+              <!-- 账号选择弹层 -->
+              <Transition name="fade">
+                <div
+                  v-if="showQuickAccountPicker"
+                  class="absolute right-0 top-10 z-50 w-56 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-800"
+                  @click.stop
+                >
+                  <div class="px-3 py-2 text-xs font-semibold text-gray-500 border-b border-gray-100 dark:border-gray-700">
+                    选择要抓包的账号
+                  </div>
+                  <div class="max-h-64 overflow-y-auto">
+                    <button
+                      v-for="acc in accountStore.accounts"
+                      :key="acc.id"
+                      class="w-full flex items-center gap-2 px-3 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-700/50"
+                      @click="pickAccountForCapture(acc)"
+                    >
+                      <span class="h-6 w-6 flex shrink-0 items-center justify-center rounded-full bg-blue-500 text-xs font-bold text-white">
+                        {{ String(acc.name || acc.nick || acc.uin || '?').replace(/[()（）\s]/g, '').charAt(0) || '账' }}
+                      </span>
+                      <span class="min-w-0 flex-1 truncate text-gray-700 dark:text-gray-200">
+                        {{ acc.name || acc.nick || acc.uin || acc.qq || acc.id }}
+                      </span>
+                      <span v-if="String(acc.id) === String(currentAccountId)" class="i-carbon-checkmark text-blue-500" />
+                    </button>
+                  </div>
+                  <button
+                    class="w-full border-t border-gray-100 px-3 py-2 text-left text-sm font-medium dark:border-gray-700"
+                    :style="{ color: 'var(--theme-primary)' }"
+                    @click="quickCaptureAsNew"
+                  >
+                    + 添加新账号（抓包登录）
+                  </button>
+                </div>
+              </Transition>
+            </div>
+            <button
               class="relative flex h-8 w-16 items-center justify-between rounded-full px-1.5 transition-all duration-300"
               :style="startBtnStyle"
               :disabled="startAllLoading"
@@ -1285,7 +1382,8 @@ useIntervalFn(updateCountdowns, 1000)
     <AccountModal
       :show="showAccountModal"
       :edit-data="accountToEdit"
-      @close="showAccountModal = false; accountToEdit = null"
+      :default-tab="accountModalDefaultTab"
+      @close="showAccountModal = false; accountToEdit = null; accountModalDefaultTab = undefined"
       @saved="handleAccountSaved"
     />
     <CareerModal :show="showCareerModal" @close="showCareerModal = false" />

@@ -9,6 +9,8 @@ import BaseTextarea from '@/components/ui/BaseTextarea.vue'
 const props = defineProps<{
   show: boolean
   editData?: any
+  // 打开时默认选中的标签：capture = 直接进抓包登录（首页快捷入口用）
+  defaultTab?: 'capture' | 'manual' | 'yyb' | 'yybqr' | 'yyb3rd'
 }>()
 
 const emit = defineEmits(['close', 'saved'])
@@ -364,7 +366,16 @@ watch(() => props.show, (newVal) => {
     yybConfigLoaded.value = false
     if (activeTab.value === 'yyb' || activeTab.value === 'yybqr')
       void loadYybConfig()
-    if (props.editData) {
+    if (props.defaultTab === 'capture') {
+      // 首页"抓包登录"入口：明确要抓包 → 优先进入抓包 tab（无论账号类型）
+      activeTab.value = 'capture'
+      // 顺手回填手动表单，切 tab 时不会丢账号信息
+      if (props.editData) {
+        form.name = props.editData.name || ''
+        form.code = props.editData.code || ''
+        form.platform = props.editData.platform || 'qq'
+      }
+    } else if (props.editData) {
       if (props.editData.provider === 'thirdparty') {
         activeTab.value = 'yyb3rd'
         yyb3rdApiBase.value = props.editData.thirdparty?.apiBase || ''
@@ -384,7 +395,8 @@ watch(() => props.show, (newVal) => {
       }
     }
     else {
-      activeTab.value = 'manual'
+      // 没有 editData：按 defaultTab（首页"抓包登录"入口传 capture）或无则 manual
+      activeTab.value = props.defaultTab || 'manual'
       form.name = ''
       form.code = ''
       form.platform = 'qq'
