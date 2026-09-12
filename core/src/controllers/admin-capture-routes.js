@@ -84,15 +84,15 @@ function resolveCaptureConfig(store, override = {}) {
 }
 
 async function captureRequest(config, path, options = {}) {
-  if (!config.apiToken) throw new Error("抓包服务 API Token 未配置");
+  // 内置模式由本机服务处理，不校验 Token；外部模式在 resolveCaptureConfig 已强制要求
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), options.timeout || CAPTURE_REQUEST_TIMEOUT_MS);
   try {
     const headers = {
-      Authorization: `Bearer ${config.apiToken}`,
       Accept: "application/json",
       ...options.headers,
     };
+    if (config.apiToken) headers.Authorization = `Bearer ${config.apiToken}`;
     if (options.body !== undefined) headers["Content-Type"] = "application/json";
     if (options.sessionId) headers["x-capture-session-id"] = options.sessionId;
     const response = await fetch(`${config.apiBase}${path}`, {
