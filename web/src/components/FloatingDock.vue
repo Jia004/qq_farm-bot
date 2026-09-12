@@ -6,6 +6,7 @@ import { useAccountStore, getPlatformLabel, getPlatformClass } from '@/stores/ac
 import { useUserStore } from '@/stores/user'
 import AccountModal from './AccountModal.vue'
 import RemarkModal from './RemarkModal.vue'
+import UpdateCodeModal from './UpdateCodeModal.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -17,41 +18,12 @@ const showAccountPopup = ref(false)
 const showAccountModal = ref(false)
 const showRemarkModal = ref(false)
 const accountToEdit = ref<any>(null)
+// —— 更新 Code 并重连弹窗 ——
+const showUpdateCodeModal = ref(false)
+const updateCodeAccount = ref<any>(null)
 
-// ---------- 滚动方向显隐导航栏（向下滑隐藏 / 向上滑显示） ----------
-// 捕获阶段监听 document 上所有元素的 scroll 事件，不依赖特定选择器：
-// 无论实际滚动发生在 window/body 还是页面内任意滚动容器，都能覆盖。
-const dockHidden = ref(false)
-let lastScrollTop = 0
-let lastScrollTarget: EventTarget | null = null
-const SCROLL_THRESHOLD = 5 // 滚动超过该像素才算"滑过"，防误触
-
-function scrollTopOf(target: EventTarget | null): number {
-  if (!target) return 0
-  if (target === document || target === document.documentElement || target === document.body) {
-    return window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0
-  }
-  const el = target as HTMLElement
-  return typeof el.scrollTop === 'number' ? el.scrollTop : 0
-}
-
-function handleScroll(e: Event) {
-  const target = e.target
-  const st = scrollTopOf(target)
-  // 滚动源切换（如从主容器切到子面板）：重置基准，不误判方向
-  if (target !== lastScrollTarget) {
-    lastScrollTarget = target
-    lastScrollTop = st
-    return
-  }
-  const delta = st - lastScrollTop
-  if (Math.abs(delta) < SCROLL_THRESHOLD) {
-    lastScrollTop = st
-    return
-  }
-  dockHidden.value = delta > 0 // 向下滑隐藏，向上滑显示
-  lastScrollTop = st
-}
+// 底部导航常驻显示：不做"滚动隐藏"，避免在小容器滚动/切换页面时导航时隐时现。
+// （原实现监听文档内所有元素滚动并随方向隐藏，实际体验差且无可靠唤回入口）
 
 const navItems = [
   { key: 'dashboard', path: '/', label: '首页', icon: 'i-carbon-home' },
@@ -89,19 +61,14 @@ function handleOutsideClick(e: MouseEvent) {
 
 onMounted(() => {
   document.addEventListener('click', handleOutsideClick)
-  // 捕获阶段监听：能收到文档内任意元素的 scroll（含 window/body 滚动）
-  document.addEventListener('scroll', handleScroll, { capture: true, passive: true })
 })
 onBeforeUnmount(() => {
   document.removeEventListener('click', handleOutsideClick)
-  document.removeEventListener('scroll', handleScroll, { capture: true } as EventListenerOptions)
 })
 
-// 切换页面时恢复导航栏显示，避免上一页隐藏的状态带到下一页
+// 切换页面时保持导航常驻（无需恢复隐藏状态）
 watch(() => route.fullPath, () => {
-  dockHidden.value = false
-  lastScrollTarget = null
-  lastScrollTop = 0
+  closePopup()
 })
 
 function selectAccount(acc: any) {
@@ -157,6 +124,13 @@ function openRemarkModal(acc: any) {
   closePopup()
 }
 
+function openUpdateCodeModal(acc: any) {
+  // 手机登录顶掉挂机后：粘贴电脑抓包拿到的“新 Code”→ 自动更新并重连
+  updateCodeAccount.value = acc
+  showUpdateCodeModal.value = true
+  closePopup()
+}
+
 async function handleAccountSaved() {
   await accountStore.fetchAccounts()
   showAccountModal.value = false
@@ -166,8 +140,8 @@ async function handleAccountSaved() {
 </script>
 
 <template>
-  <div class="ambient-glow" :class="{ 'dock-hidden': dockHidden }" />
-  <div class="floating-nav-wrapper" :class="{ 'dock-hidden': dockHidden }">
+  <div class="ambient-glow" />
+  <div class="floating-nav-wrapper">
     <nav class="floating-nav" role="navigation" aria-label="主导航">
       <button
         v-for="item in navItems"
@@ -221,7 +195,10 @@ async function handleAccountSaved() {
                   {{ getPlatformLabel(acc.platform) }}
                 </span>
                 <span v-if="currentAccount?.id === acc.id" class="popup-check">✓</span>
-                <button class="popup-remark-btn" @click.stop="openRemarkModal(acc)">✎</button>
+                <button class="popup-remark-btn" title="更新 Code 并重连（被顶下线后粘贴新 Code）" @click.stop="openUpdateCodeModal(acc)">
+                  <span class="i-carbon-refresh" />
+                </button>
+                <button class="popup-remark-btn" title="修改备注" @click.stop="openRemarkModal(acc)">✎</button>
               </button>
             </div>
 
@@ -254,6 +231,13 @@ async function handleAccountSaved() {
         @close="showRemarkModal = false"
         @saved="handleAccountSaved"
       />
+
+      <UpdateCodeModal
+        :show="showUpdateCodeModal"
+        :account="updateCodeAccount"
+        @close="showUpdateCodeModal = false; updateCodeAccount = null"
+        @saved="handleAccountSaved"
+      />
     </Teleport>
   </div>
 </template>
@@ -272,10 +256,9 @@ async function handleAccountSaved() {
   transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.35s ease;
   will-change: transform;
 }
-.floating-nav-wrapper.dock-hidden {
-  transform: translateY(calc(100% + 28px));
-  opacity: 0;
-  pointer-events: none;
+.floating-nav-wrapper.dock-hidden,
+.ambient-glow.dock-hidden {
+  /* 保留：若外部仍传 dock-hidden 可隐藏（当前常驻不使用） */
 }
 .ambient-glow {
   position: fixed;
@@ -288,12 +271,7 @@ async function handleAccountSaved() {
   pointer-events: none;
   z-index: 999;
   filter: blur(36px);
-  transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.35s ease;
   will-change: transform;
-}
-.ambient-glow.dock-hidden {
-  transform: translateX(-50%) translateY(calc(100% + 28px));
-  opacity: 0;
 }
 .floating-nav {
   pointer-events: auto;

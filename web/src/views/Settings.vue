@@ -10,15 +10,14 @@ import { useUserSettings } from '@/composables/settings/useUserSettings'
 import { useSettingStore } from '@/stores/setting'
 import { useAutomationSettings } from '@/composables/settings/useAutomationSettings'
 import { useStrategySettings } from '@/composables/settings/useStrategySettings'
-import AdminPanel from '@/views/AdminPanel.vue'
 
 const settingStore = useSettingStore()
 
-type SettingsTabKey = 'account' | 'default-plan' | 'user' | 'admin'
+type SettingsTabKey = 'account' | 'default-plan' | 'user'
 
 function getInitialSettingsTab(): SettingsTabKey {
   const saved = localStorage.getItem('settings-active-tab')
-  return saved === 'default-plan' || saved === 'user' || saved === 'admin'
+  return saved === 'default-plan' || saved === 'user'
     ? saved
     : 'account'
 }
@@ -41,7 +40,6 @@ const tabs = [
   { key: 'account', label: '账号管理', icon: 'i-carbon-user-settings' },
   { key: 'default-plan', label: '默认方案', icon: 'i-carbon-settings-adjust' },
   { key: 'user', label: '用户管理', icon: 'i-carbon-user' },
-  { key: 'admin', label: '后台', icon: 'i-carbon-settings-adjust' },
 ] as const
 
 const modalVisible = ref(false)
@@ -187,13 +185,13 @@ onMounted(async () => {
 
 <template>
   <div class="settings-page">
-    <div class="mb-4">
+    <div class="mb-4 shrink-0">
       <h1 class="text-2xl text-gray-900 font-bold dark:text-gray-100 max-sm:text-xl">
         设置
       </h1>
     </div>
 
-    <div class="glass-page">
+    <div class="glass-page w-full">
       <div class="glass-tabnav">
         <nav ref="settingsTabsNav" class="flex gap-1 overflow-x-auto p-2">
           <button
@@ -213,7 +211,7 @@ onMounted(async () => {
         </nav>
       </div>
 
-      <div class="p-4 max-sm:p-3">
+      <div class="glass-content p-4 max-sm:p-3">
         <AccountSettingsTab
           v-if="activeTab === 'account'"
           :accounts="accounts"
@@ -290,8 +288,6 @@ onMounted(async () => {
           @test-offline="handleTestOffline"
           @save-offline="handleSaveOffline"
         />
-
-        <AdminPanel v-else-if="activeTab === 'admin'" />
       </div>
     </div>
 
@@ -314,12 +310,8 @@ onMounted(async () => {
   margin: 0 auto;
   max-width: 1440px;
   padding: 18px 24px;
-  /* App.vue 根容器是 h-screen overflow-hidden，本页必须自带滚动容器，
-     否则后台等子 tab 内容超出屏幕时无法滚动（移动端尤其明显） */
-  height: 100%;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  overscroll-behavior: contain;
+  /* 父容器（DefaultLayout）本身 overflow-y-auto 负责整页滚动；
+     这里不设 height/overflow，避免与外层滚动冲突导致卡片宽度/高度异常 */
 }
 
 @media (max-width: 640px) {
@@ -330,6 +322,7 @@ onMounted(async () => {
 
 .glass-page {
   border-radius: 16px;
+  overflow: hidden;
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
   background: var(--theme-glass);
@@ -338,6 +331,11 @@ onMounted(async () => {
 
 .glass-tabnav {
   border-bottom: 1px solid var(--theme-border);
+}
+
+.glass-content {
+  /* 保证切换 tab 时内容区高度不过度塌缩，卡片整体观感稳定 */
+  min-height: 420px;
 }
 
 .glass-content :deep(.bg-white),

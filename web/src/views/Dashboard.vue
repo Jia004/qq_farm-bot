@@ -21,6 +21,7 @@ import { useStrategySettings } from '@/composables/settings/useStrategySettings'
 import { useSettingStore } from '@/stores/setting'
 import AccountModal from '@/components/AccountModal.vue'
 import CareerModal from '@/components/CareerModal.vue'
+import UpdateCodeModal from '@/components/UpdateCodeModal.vue'
 import { useAccountStore } from '@/stores/account'
 import { useBagStore } from '@/stores/bag'
 import { useStatusStore } from '@/stores/status'
@@ -46,6 +47,8 @@ const { dashboardItems } = storeToRefs(bagStore)
 const showAccountDropdown = ref(false)
 const showAccountModal = ref(false)
 const showCareerModal = ref(false)
+// —— 更新 Code 并重连 ——
+const showUpdateCodeModal = ref(false)
 const appStore = useAppStore()
 const startBtnStyle = computed(() => appStore.isDark
   ? { background: 'linear-gradient(135deg, #1e3a8a, #3730a3)', boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.4)' }
@@ -85,6 +88,9 @@ const allAccountsRunning = computed(() => {
   const accs = accountStore.accounts
   return accs.length > 0 && accs.every(a => a.running)
 })
+
+// 当前选中账号是否在线（宠物礼包等面板按"当前账号"判断在线，而非要求全部账号都在线）
+const currentAccountRunning = computed(() => !!currentAccount.value?.running)
 
 async function startAllAccounts() {
   if (startAllLoading.value) return
@@ -980,7 +986,13 @@ useIntervalFn(updateCountdowns, 1000)
         <div v-if="currentAccountDisconnected" class="flex flex-col items-center justify-center gap-4 py-8 text-center text-gray-500">
           <div class="i-carbon-connection-signal-off text-4xl text-gray-400" />
           <div class="text-base font-medium text-gray-700 dark:text-gray-300">账号未登录</div>
-          <div class="text-sm text-gray-400">请先运行账号或检查网络连接。</div>
+          <div class="text-sm text-gray-400">请先运行账号或检查网络连接。若被手机登录顶掉，请粘贴电脑抓包的新 Code 一键重连。</div>
+          <div class="flex gap-2">
+            <BaseButton variant="primary" @click="showUpdateCodeModal = true">
+              <span class="i-carbon-refresh" />
+              更新 Code 并重连
+            </BaseButton>
+          </div>
         </div>
         <div v-else-if="!Object.keys(filteredOperations).length" class="flex flex-col items-center justify-center gap-3 py-6 text-center">
           <div class="i-carbon-chart-column text-3xl text-gray-300" />
@@ -1214,7 +1226,7 @@ useIntervalFn(updateCountdowns, 1000)
     <div v-show="activeTab === 'pet'" class="h-full">
       <DogGiftsPanel
         :account-id="currentAccountId"
-        :account-running="allAccountsRunning"
+        :account-running="currentAccountRunning"
       />
     </div>
 
@@ -1277,6 +1289,12 @@ useIntervalFn(updateCountdowns, 1000)
       @saved="handleAccountSaved"
     />
     <CareerModal :show="showCareerModal" @close="showCareerModal = false" />
+    <UpdateCodeModal
+      :show="showUpdateCodeModal"
+      :account="currentAccount"
+      @close="showUpdateCodeModal = false"
+      @saved="handleAccountSaved"
+    />
   </Teleport>
 
   <!-- 一键启动结果弹窗 -->
