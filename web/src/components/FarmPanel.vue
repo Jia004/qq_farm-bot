@@ -128,9 +128,15 @@ watch(currentAccountId, (newId, oldId) => {
 watch(() => currentAccount.value?.running, () => { refresh() })
 
 const { pause, resume } = useIntervalFn(() => {
-  if (lands.value) lands.value = lands.value.map((l: any) =>
-    l.matureInSec > 0 ? { ...l, matureInSec: l.matureInSec - 1 } : l,
-  )
+  // 原地递减，避免每秒重建数组/对象导致整个土地网格重渲染
+  const list = lands.value
+  if (!Array.isArray(list))
+    return
+  for (let i = 0; i < list.length; i++) {
+    const l: any = list[i]
+    if (l && l.matureInSec > 0)
+      l.matureInSec -= 1
+  }
 }, 1000)
 
 const { pause: pauseRefresh, resume: resumeRefresh } = useIntervalFn(refresh, 60000)

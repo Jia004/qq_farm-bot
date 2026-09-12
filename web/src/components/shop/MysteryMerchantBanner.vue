@@ -76,9 +76,22 @@ function openMysteryShop() {
   router.push({ path: '/shop', query: { tab: 'mystery' } })
 }
 
-useIntervalFn(() => {
+const { pause: pauseTick, resume: resumeTick } = useIntervalFn(() => {
   now.value = Date.now()
-}, 1000)
+}, 1000, { immediate: false })
+
+pauseTick()
+// 仅在"有进行中的神秘商人报价"时才每秒刷新倒计时（否则横幅隐藏，纯浪费）
+watch(
+  () => !!(mysteryOffer.value?.active && !mysteryOffer.value?.purchased),
+  (active) => {
+    if (active)
+      resumeTick()
+    else
+      pauseTick()
+  },
+  { immediate: true },
+)
 
 useIntervalFn(() => {
   refreshMysteryOffer()

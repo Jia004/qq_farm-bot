@@ -339,10 +339,11 @@ async function handleAccountSaved() {
   border-radius: 2px;
   background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--theme-primary) 80%, #fff), transparent);
   animation: glow-pulse 2s ease-in-out infinite alternate;
+  will-change: opacity, transform;
 }
 @keyframes glow-pulse {
-  from { opacity: 0.5; width: 16px; }
-  to { opacity: 1; width: 24px; }
+  from { opacity: 0.5; transform: translateX(-50%) scaleX(0.8); }
+  to { opacity: 1; transform: translateX(-50%) scaleX(1.2); }
 }
 
 /* Account Popup */

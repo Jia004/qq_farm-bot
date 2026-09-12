@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed } from 'vue'
 
 const props = withDefaults(defineProps<{
   land: any
@@ -14,19 +14,6 @@ defineEmits<{
 }>()
 
 const land = computed(() => props.land)
-const now = ref(Date.now())
-let timer: ReturnType<typeof setInterval> | null = null
-
-onMounted(() => {
-  timer = setInterval(() => {
-    now.value = Date.now()
-  }, 1000)
-})
-
-onUnmounted(() => {
-  if (timer)
-    clearInterval(timer)
-})
 
 const growProgress = computed(() => {
   const matureInSec = land.value.matureInSec || 0

@@ -1,21 +1,12 @@
 <script setup lang="ts">
 import { useIntervalFn } from '@vueuse/core'
 import { storeToRefs } from 'pinia'
-import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import api from '@/api'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BaseInput from '@/components/ui/BaseInput.vue'
 import BaseSelect from '@/components/ui/BaseSelect.vue'
 import DashboardTabs from '@/components/DashboardTabs.vue'
-import FarmPanel from '@/components/FarmPanel.vue'
-import BagPanel from '@/components/BagPanel.vue'
-import TaskPanel from '@/components/TaskPanel.vue'
-import DogGiftsPanel from '@/components/DogGiftsPanel.vue'
-import FriendsTabContent from '@/components/DashboardFriendsTab.vue'
-import AutomationSettingsTab from '@/components/settings/AutomationSettingsTab.vue'
-import StrategySettingsTab from '@/components/settings/StrategySettingsTab.vue'
-import Illustrated from '@/views/Illustrated.vue'
-import Analytics from '@/views/Analytics.vue'
 import { useAutomationSettings } from '@/composables/settings/useAutomationSettings'
 import { useStrategySettings } from '@/composables/settings/useStrategySettings'
 import { useSettingStore } from '@/stores/setting'
@@ -29,6 +20,17 @@ import { useToastStore } from '@/stores/toast'
 import { formatCouponAmount, formatGoldAmount, formatGoldBeanAmount } from '@/utils/number-format'
 import ThemeToggle from '@/components/ThemeToggle.vue'
 import { useAppStore } from '@/stores/app'
+
+// 非首屏 tab 组件改为异步加载：配合 visitedTabs 懒挂载，仅首次切到该 tab 时下载并实例化
+const FarmPanel = defineAsyncComponent(() => import('@/components/FarmPanel.vue'))
+const BagPanel = defineAsyncComponent(() => import('@/components/BagPanel.vue'))
+const TaskPanel = defineAsyncComponent(() => import('@/components/TaskPanel.vue'))
+const DogGiftsPanel = defineAsyncComponent(() => import('@/components/DogGiftsPanel.vue'))
+const FriendsTabContent = defineAsyncComponent(() => import('@/components/DashboardFriendsTab.vue'))
+const AutomationSettingsTab = defineAsyncComponent(() => import('@/components/settings/AutomationSettingsTab.vue'))
+const StrategySettingsTab = defineAsyncComponent(() => import('@/components/settings/StrategySettingsTab.vue'))
+const Illustrated = defineAsyncComponent(() => import('@/views/Illustrated.vue'))
+const Analytics = defineAsyncComponent(() => import('@/views/Analytics.vue'))
 const statusStore = useStatusStore()
 const accountStore = useAccountStore()
 const bagStore = useBagStore()
@@ -230,6 +232,12 @@ const hasActiveLogFilter = computed(() =>
   !!(filter.module || filter.event || filter.keyword || filter.isWarn),
 )
 const activeTab = ref('overview')
+// 懒挂载：只有访问过的 tab 才实例化，避免首屏同时挂载全部面板（各自定时器/请求）
+const visitedTabs = ref<Record<string, boolean>>({ overview: true })
+watch(activeTab, (tab) => {
+  if (!visitedTabs.value[tab])
+    visitedTabs.value[tab] = true
+})
 const panelEl = ref<HTMLElement | null>(null)
 
 const swipeStart = { x: 0, y: 0 }
@@ -660,7 +668,7 @@ watch(status, (newVal) => {
 
   if (newVal?.uptime !== undefined)
     localUptime.value = newVal.uptime
-}, { deep: true })
+})
 
 function formatDuration(seconds: number) {
   if (seconds <= 0)
@@ -833,12 +841,13 @@ async function clearLogs() {
   }
 }
 
+// allLogs 是 computed（依赖变化即返回新数组引用），无需 deep
 watch(allLogs, () => {
   nextTick(() => {
     if (logContainer.value && autoScroll.value)
       logContainer.value.scrollTop = logContainer.value.scrollHeight
   })
-}, { deep: true })
+})
 
 function scrollToBottom() {
   nextTick(() => {
@@ -1300,27 +1309,27 @@ useIntervalFn(updateCountdowns, 1000)
     </div>
 
     <!-- 农场（复用 FarmPanel） -->
-    <div v-show="activeTab === 'farm'" class="h-full">
+    <div v-if="visitedTabs.farm" v-show="activeTab === 'farm'" class="h-full">
       <FarmPanel />
     </div>
 
     <!-- 背包（复用 BagPanel） -->
-    <div v-show="activeTab === 'bag'" class="h-full">
+    <div v-if="visitedTabs.bag" v-show="activeTab === 'bag'" class="h-full">
       <BagPanel />
     </div>
 
     <!-- 好友（复用 FriendsFriendList） -->
-    <div v-show="activeTab === 'friends'" class="h-full">
+    <div v-if="visitedTabs.friends" v-show="activeTab === 'friends'" class="h-full">
       <FriendsTabContent />
     </div>
 
     <!-- 任务（复用 TaskPanel） -->
-    <div v-show="activeTab === 'tasks'" class="h-full">
+    <div v-if="visitedTabs.tasks" v-show="activeTab === 'tasks'" class="h-full">
       <TaskPanel />
     </div>
 
     <!-- 宠物（护主犬同气礼包） -->
-    <div v-show="activeTab === 'pet'" class="h-full">
+    <div v-if="visitedTabs.pet" v-show="activeTab === 'pet'" class="h-full">
       <DogGiftsPanel
         :account-id="currentAccountId"
         :account-running="currentAccountRunning"
@@ -1328,7 +1337,7 @@ useIntervalFn(updateCountdowns, 1000)
     </div>
 
     <!-- 自动控制（完整设置） -->
-    <div v-show="activeTab === 'automation'" class="h-full">
+    <div v-if="visitedTabs.automation" v-show="activeTab === 'automation'" class="h-full">
       <AutomationSettingsTab
         v-model:settings="localAutomationSettings"
         :current-account-name="currentAccount?.nick || currentAccount?.name || ''"
@@ -1342,7 +1351,7 @@ useIntervalFn(updateCountdowns, 1000)
     </div>
 
     <!-- 策略设置（完整设置） -->
-    <div v-show="activeTab === 'strategy'" class="h-full">
+    <div v-if="visitedTabs.strategy" v-show="activeTab === 'strategy'" class="h-full">
       <StrategySettingsTab
         v-model:settings="localStrategySettings"
         :current-account-name="currentAccount?.nick || currentAccount?.name || ''"
@@ -1368,12 +1377,12 @@ useIntervalFn(updateCountdowns, 1000)
     </div>
 
     <!-- 图鉴 -->
-    <div v-show="activeTab === 'illustrated'" class="illustrated-container h-full">
+    <div v-if="visitedTabs.illustrated" v-show="activeTab === 'illustrated'" class="illustrated-container h-full">
       <Illustrated />
     </div>
 
     <!-- 分析 -->
-    <div v-show="activeTab === 'analytics'" class="analytics-container h-full">
+    <div v-if="visitedTabs.analytics" v-show="activeTab === 'analytics'" class="analytics-container h-full">
       <Analytics />
     </div>
   </div>

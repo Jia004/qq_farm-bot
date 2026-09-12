@@ -344,11 +344,15 @@ async function loadData() {
 }
 
 useIntervalFn(() => {
+  // 原地递减，避免每秒重建整个数组/对象（会触发全列表重渲染）
   for (const gid in friendLands.value) {
-    if (friendLands.value[gid]) {
-      friendLands.value[gid] = friendLands.value[gid].map((l: any) =>
-        l.matureInSec > 0 ? { ...l, matureInSec: l.matureInSec - 1 } : l,
-      )
+    const list = friendLands.value[gid]
+    if (!Array.isArray(list))
+      continue
+    for (let i = 0; i < list.length; i++) {
+      const l = list[i]
+      if (l && l.matureInSec > 0)
+        l.matureInSec -= 1
     }
   }
 }, 1000)

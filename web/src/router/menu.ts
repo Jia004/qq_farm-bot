@@ -17,13 +17,6 @@ export const menuRoutes: MenuItem[] = [
     component: () => import('@/views/Dashboard.vue'),
   },
   {
-    path: 'personal',
-    name: 'personal',
-    label: '账号',
-    icon: 'i-carbon-user',
-    component: () => import('@/views/Personal.vue'),
-  },
-  {
     path: 'friends',
     name: 'friends',
     label: '好友',
