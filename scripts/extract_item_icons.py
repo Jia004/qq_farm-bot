@@ -23,9 +23,12 @@ QQ 农场 · 物品图标批量提取工具
 
 后续新物品出现时
 ----------------
-1. 抓包获取新版 manifest.json（游戏客户端启动时下载的资源清单）
-2. 用它更新 core/src/gameConfig/manifest.csv（格式转换见 extract_seed_icons.py 所用字段）
-3. 重新跑本脚本即可补齐新图标
+1. 抓包获取新版 manifest.json（游戏客户端启动时下载的资源清单）：
+   用内置抓包服务跑一次（游戏启动即自动存档到 core/data/capture-assets/），
+   或在面板 / 管理接口导出为 core/src/gameConfig/manifest-from-capture.json；
+2. 直接跑：python scripts/extract_item_icons.py --manifest <manifest.json 路径>
+   （--manifest 会把游戏格式清单与本地 manifest.csv 合并，两侧的新 sprite 都能提取）
+3. 如需把新 sprite 持久化进 manifest.csv，见 extract_seed_icons.py 所用字段做格式转换。
 
 依赖
 ----
@@ -37,6 +40,7 @@ QQ 农场 · 物品图标批量提取工具
   python scripts/extract_item_icons.py            # 提取全部缺失图标
   python scripts/extract_item_icons.py --dry      # 只看会提取哪些，不下载
   python scripts/extract_item_icons.py --id 301102,1029   # 只提取指定物品
+  python scripts/extract_item_icons.py --manifest core/src/gameConfig/manifest-from-capture.json
 """
 from __future__ import annotations
 
@@ -126,13 +130,59 @@ def load_manifest() -> dict:
     return result
 
 
+def load_manifest_json(path: str) -> dict:
+    """载入抓包得到的游戏 manifest.json -> {sprite_name: row}。
+
+    游戏清单结构：{"images": [{sprite_name, source, metadata_json, rect?}, ...]}
+    也兼容直接数组。返回值与 load_manifest() 相同，字段名对齐 manifest.csv
+    （source / rect / metadata_json），rect 统一转成 CSV 里的字面量形式。
+    """
+    data = json.load(open(path, encoding='utf-8'))
+    imgs = data.get('images') if isinstance(data, dict) else data
+    if not isinstance(imgs, list):
+        raise ValueError(f'{path} 不是合法的游戏资源清单（缺 images 数组）')
+    result = {}
+    for it in imgs:
+        if not isinstance(it, dict):
+            continue
+        sn = str(it.get('sprite_name') or it.get('name') or '').strip()
+        if not sn or sn in result:
+            continue
+        rect = it.get('rect')
+        if isinstance(rect, dict):
+            rect_str = ("{'x': %d, 'y': %d, 'width': %d, 'height': %d}"
+                        % (rect.get('x', 0), rect.get('y', 0),
+                           rect.get('width', 0), rect.get('height', 0)))
+        elif isinstance(rect, str):
+            rect_str = rect
+        else:
+            rect_str = ''
+        result[sn] = {
+            'sprite_name': sn,
+            'source': str(it.get('source') or ''),
+            'metadata_json': str(it.get('metadata_json') or ''),
+            'rect': rect_str,
+        }
+    return result
+
+
 def main():
     ap = argparse.ArgumentParser(description='批量提取物品图标（icon_res -> manifest -> PNG）')
     ap.add_argument('--dry', action='store_true', help='只列清单，不下载')
     ap.add_argument('--id', type=str, default='', help='逗号分隔的物品 ID，只提取这些')
+    ap.add_argument('--manifest', type=str, default='',
+                    help='抓包得到的 manifest.json（游戏格式），与 manifest.csv 合并使用')
     args = ap.parse_args()
 
     sprites = load_manifest()
+    if args.manifest:
+        extra = load_manifest_json(args.manifest)
+        added = 0
+        for sn, row in extra.items():
+            if sn not in sprites:
+                sprites[sn] = row
+                added += 1
+        print(f'manifest.json 载入 {len(extra)} 个精灵（新增 {added} 个不在 manifest.csv 中）')
     items = json.load(open(ITEMINFO, encoding='utf-8'))
 
     have_ids = set()

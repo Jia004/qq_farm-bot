@@ -28,6 +28,7 @@ const https = require('node:https');
 const crypto = require('node:crypto');
 const { LeafCertificateCache } = require('./capture-ca');
 const { parseGameWsFrame } = require('./game-ws');
+const { createCaptureAssetStore, createConnectionAssetTracker } = require('./capture-asset-store');
 
 const BIND_HOST = '0.0.0.0';
 const MAX_FRAME_BUFFER = 8 * 1024 * 1024;
@@ -118,12 +119,16 @@ function extractSniFromClientHello(record) {
 }
 
 class CaptureMitmProxy {
-    constructor({ ca, logger, onEvent } = {}) {
+    constructor({ ca, logger, onEvent, assetStore } = {}) {
         this.logger = logger;
         this.ca = ca;
         this.leafCache = new LeafCertificateCache(ca);
         // onEvent({ type: 'ws-open'|'ws-frame'|'ws-close'|'http-request', ... })
         this.onEvent = onEvent || (() => {});
+        // 资源存档器（可选）：命中资源清单/ASTC 图集时把响应体落盘
+        this.assetStore = assetStore || null;
+        // 每条 TLS 连接的响应跟踪器（懒建）
+        this.assetTrackers = new WeakMap();
         this.httpServer = null;
         this.port = 0;
         this.running = false;
@@ -135,6 +140,20 @@ class CaptureMitmProxy {
         // 上游覆盖映射：host -> { host, port }，用于测试与本地网关调试
         this.upstreamOverrides = new Map();
         this.stats = { connect: 0, bypass: 0, wsSessions: 0, frames: 0 };
+    }
+
+    /** 为一条 TLS 连接取/建响应跟踪器 */
+    trackerFor(tlsSocket) {
+        if (!this.assetStore || !tlsSocket) return null;
+        let tracker = this.assetTrackers.get(tlsSocket);
+        if (!tracker) {
+            tracker = createConnectionAssetTracker({
+                store: this.assetStore,
+                logger: this.logger,
+            });
+            this.assetTrackers.set(tlsSocket, tracker);
+        }
+        return tracker;
     }
 
     setUpstreamOverrides(mapping) {
@@ -571,15 +590,21 @@ class CaptureMitmProxy {
 
         const tlsSocket = res.socket;
         if (!tlsSocket) return;
+        // 资源存档：登记请求（响应按同连接顺序归因处理）
+        const tracker = this.trackerFor(tlsSocket);
+        tracker?.enqueue({ host, url: req.url || '/', method: req.method || 'GET' });
         if (!tlsSocket.__captureUpstream) {
             const upstream = this.resolveUpstream(host, connectPort || 443);
             tlsSocket.__captureUpstream = this.connectRealTarget(upstream.host, upstream.port, host)
                 .then((real) => {
                     this.trackSocket(real);
                     real.on('data', (chunk) => {
+                        // 先喂给资源跟踪器（旁路），再原样回传给手机
+                        tracker?.feed(chunk);
                         if (tlsSocket.writable) tlsSocket.write(chunk);
                     });
                     const teardown = () => {
+                        tracker?.close();
                         this.destroySocket(tlsSocket);
                         this.destroySocket(real);
                     };

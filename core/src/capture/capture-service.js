@@ -21,6 +21,8 @@
 const crypto = require('node:crypto');
 const { CaptureMitmProxy } = require('./capture-mitm');
 const { decodeFriendReply, decodeLoginReply } = require('./game-ws');
+const { createCaptureAssetStore } = require('./capture-asset-store');
+const { getDataFile } = require('../config/runtime-paths');
 
 const FRIEND_COMPLETE_SOURCES = new Set([
     'gamepb.friendpb.FriendService.GetAll',
@@ -38,6 +40,16 @@ function createInternalCaptureService({ ca, logger }) {
         bypassHosts: [],
         startedAt: Date.now(),
     };
+    // 资源存档器：抓包期间把 CDN 资源清单/图集响应体落盘到 data/capture-assets/
+    let assetStore = null;
+    try {
+        assetStore = createCaptureAssetStore({
+            dir: getDataFile('capture-assets'),
+            logger,
+        });
+    } catch (error) {
+        logger?.warn?.(`[Capture] 资源存档器初始化失败: ${error.message}`);
+    }
 
     function newSession(sessionId, platform) {
         const session = {
@@ -154,6 +166,7 @@ function createInternalCaptureService({ ca, logger }) {
             state.mitm = new CaptureMitmProxy({
                 ca,
                 logger,
+                assetStore,
                 onEvent: (event) => {
                     if (event.type === 'ws-open') handleWsOpen(event);
                     else if (event.type === 'ws-frame') handleWsFrame(event);
@@ -256,6 +269,21 @@ function createInternalCaptureService({ ca, logger }) {
                         uptime: Math.floor((Date.now() - state.startedAt) / 1000),
                         sessions: sessions.size,
                         portPool: [state.port].filter(Boolean),
+                    });
+                },
+            },
+            {
+                method: 'GET',
+                pattern: /^\/api\/assets$/,
+                handler: (req, res) => {
+                    const assets = assetStore ? assetStore.list() : [];
+                    json(res, 200, {
+                        ok: true,
+                        data: {
+                            dir: assetStore ? assetStore.dir : '',
+                            count: assets.length,
+                            assets: assets.slice(-200),
+                        },
                     });
                 },
             },
@@ -393,6 +421,7 @@ function createInternalCaptureService({ ca, logger }) {
             sessions: sessions.size,
             ...state.mitm?.stats,
         }),
+        getAssetStore: () => assetStore,
         getLanHost,
     };
 }

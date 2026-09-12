@@ -2,6 +2,16 @@
 
 这里记录最近更新了什么。
 
+## 2026-09-12（Aoluis1005 维护分支）
+
+### 新增功能
+
+- **抓包资源存档（补齐新物品图标的关键一步）**：内置抓包服务现在会把游戏客户端下载的 CDN 资源响应体落盘到 `core/data/capture-assets/`（含资源清单 `manifest.json` 与 `.astc` 图集）。原理：MITM 代理按 TLS 连接对响应做顺序归因（请求队列 + Content-Length / chunked 帧解析），只存档文本类（json/js/manifest）与纹理类资源，单文件 8MB/32MB、总量 512MB 上限，完全旁路不影响转发。
+  - 新增 `GET /api/admin/capture-assets`：面板查看已抓资源列表；
+  - 新增 `POST /api/admin/capture-assets/export-manifest`：把抓到的资源清单导出为 `core/src/gameConfig/manifest-from-capture.json`；
+  - `scripts/extract_item_icons.py` 新增 `--manifest` 参数：直接吃抓包得到的 `manifest.json`（游戏格式），补齐 `manifest.csv` 里没有的新物品图标。
+- **`capture-asset-store.js`**：新增抓包资源存档模块（落盘器 + 连接级响应跟踪器），配套 10 个测试（纯函数 / 多请求归因 / chunked+gzip / MITM 端到端）。
+
 ## 2026-07-31（Aoluis1005 维护分支）
 
 ### 新增功能

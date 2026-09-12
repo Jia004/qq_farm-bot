@@ -1,7 +1,8 @@
 const crypto = require("node:crypto");
 const fs = require("node:fs");
+const path = require("node:path");
 const fetch = require("node-fetch");
-const { getDataFile } = require("../config/runtime-paths");
+const { getDataFile, getResourcePath } = require("../config/runtime-paths");
 const internalCapture = require("../capture/internal-capture");
 
 const CAPTURE_REQUEST_TIMEOUT_MS = 15_000;
@@ -845,6 +846,54 @@ function registerAdminCaptureRoutes({
   // 内置抓包服务状态（供管理面板展示运行状态 / CA 指纹）
   app.get("/api/admin/capture-internal-status", requireAdminRole, (req, res) => {
     res.json({ ok: true, data: internalCapture.getStatus() });
+  });
+
+  // 已抓取的游戏资源列表（manifest.json / ASTC 图集等）
+  app.get("/api/admin/capture-assets", requireAdminRole, async (req, res) => {
+    try {
+      await internalCapture.ensureStarted(logger);
+      const apiBase = internalCapture.getApiBase();
+      if (!apiBase) return res.json({ ok: true, data: { dir: "", count: 0, assets: [] } });
+      const response = await fetch(`${apiBase}/api/assets`, { timeout: CAPTURE_REQUEST_TIMEOUT_MS });
+      const data = await response.json();
+      res.json({ ok: true, data: data?.data || { dir: "", count: 0, assets: [] } });
+    } catch (error) {
+      res.json({ ok: true, data: { dir: "", count: 0, assets: [], error: error.message } });
+    }
+  });
+
+  // 导出已抓到的 manifest.json（资源清单）到 gameConfig 目录，供图标提取工具使用
+  app.post("/api/admin/capture-assets/export-manifest", requireAdminRole, async (req, res) => {
+    try {
+      if (!requireDangerConfirmation(req, res, "EXPORT_CAPTURE_MANIFEST")) return;
+      await internalCapture.ensureStarted(logger);
+      const apiBase = internalCapture.getApiBase();
+      if (!apiBase) throw new Error("内置抓包服务未就绪");
+      const response = await fetch(`${apiBase}/api/assets`, { timeout: CAPTURE_REQUEST_TIMEOUT_MS });
+      const payload = await response.json();
+      const assets = Array.isArray(payload?.data?.assets) ? payload.data.assets : [];
+      const manifest = assets.find(
+        (item) => item && item.isText && /manifest/i.test(String(item.url || "")),
+      ) || assets.find(
+        (item) => item && item.isText && /\.json$/i.test(String(item.url || "")),
+      );
+      if (!manifest) throw new Error("尚未抓到资源清单（manifest.json），请先完整运行一次抓包");
+      const dir = payload.data.dir;
+      const sourcePath = path.join(dir, manifest.file);
+      if (!fs.existsSync(sourcePath)) throw new Error("资源文件已不存在，请重新抓取");
+      const targetDir = getResourcePath("gameConfig");
+      const targetPath = path.join(targetDir, "manifest-from-capture.json");
+      fs.copyFileSync(sourcePath, targetPath);
+      logger.warn("已导出抓包资源清单", {
+        admin: req.currentUser?.username || "",
+        source: manifest.url,
+        target: targetPath,
+        confirmation: "EXPORT_CAPTURE_MANIFEST",
+      });
+      res.json({ ok: true, data: { target: targetPath, size: fs.statSync(targetPath).size } });
+    } catch (error) {
+      res.status(502).json({ ok: false, error: error.message });
+    }
   });
 }
 
