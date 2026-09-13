@@ -29,7 +29,6 @@ const navItems = [
   { key: 'dashboard', path: '/', label: '首页', icon: 'i-carbon-home' },
   { key: 'shop', path: '/shop', label: '商城', icon: 'i-carbon-shopping-cart' },
   { key: 'account', label: '账号', icon: 'i-carbon-user' },
-  { key: 'activity', path: '/activity', label: '活动', icon: 'i-carbon-gift' },
   { key: 'settings', path: '/settings', label: '设置', icon: 'i-carbon-settings' },
 ]
 

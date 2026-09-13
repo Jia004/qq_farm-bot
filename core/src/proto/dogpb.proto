@@ -2,27 +2,230 @@ syntax = "proto3";
 
 package gamepb.dogpb;
 
+import "corepb.proto";
+
+// ============================================================
+// 护主犬（宠物）系统协议
+// 【2026-09-14 客户端反混淆 + 编译描述符提取，字段编号已全部实锤】
+//
+// 协议方法（DogService）：
+//   GetDogInfo        - 查询宠物全量信息（宠物列表/出战/食物/礼包）
+//   ActivateDog       - 激活宠物（已有，免费）
+//   BuyAndActivateDog - 购买并激活宠物
+//   DeployDog         - 出战护农（设置看护宠物）
+//   WithdrawDog       - 收回宠物（停止看护）
+//   AddFood           - 投喂狗粮（食物ID + 数量）
+//   GetProtectLogs    - 查询看护日志（抓住小偷记录）
+//   ClaimSkillGifts   - 领取同气礼包
+//   SetDogCustomName  - 设置宠物自定义名
+//   EquipDogSkin      - 装备宠物皮肤
+//   ViewDog           - 标记宠物已查看
+//   GetFriendFeedInfo - 查询好友投喂信息
+//   FeedFriendDog     - 给好友的狗投喂
+// ============================================================
+
 message DogInfo {
-    int64 id = 1;
-    int64 expire_time = 3;
-    int32 status = 4;
-    int32 level = 5;
-    int32 active = 7;
+    int64 id = 1;                    // 宠物ID（90001田园犬/90002牧羊犬/90003斑点狗/90011柯基/90021护主犬/90031比熊犬）
+    string name = 2;                 // 宠物名
+    int64 protect_probability = 3;   // 看护率（万分数，1000=10%，3000=30%，5000=50%）
+    int64 lost_gold_range_min = 4;   // 被盗金币下限
+    int64 lost_gold_range_max = 5;   // 被盗金币上限
+    bool owned = 6;                  // 是否已拥有
+    bool activated = 7;              // 是否已激活（激活后可用）
+    int64 price = 8;                 // 购买价格（金币）
+    int64 expire_time = 9;           // 过期时间（活动宠）
+    bool is_reddot = 10;             // 红点提示
+    string custom_name = 11;         // 自定义名
+    repeated int64 available_skins = 12; // 可用皮肤列表
 }
 
 message GetDogInfoRequest {
-    int64 host_gid = 1;
+    int64 host_gid = 1;              // 0或自己GID
 }
 
 message GetDogInfoReply {
-    repeated DogInfo dogs = 1;
-    int64 coin = 3;
-    int64 protect_time = 4;
-    repeated DogFood foods = 5;
+    repeated DogInfo dog_list = 1;             // 全部宠物列表（含未拥有）
+    int64 current_deployed_dog_id = 2;         // 当前出战宠物ID（0=未出战）
+    int64 food_last_sec = 3;                   // 当前食物剩余秒数
+    int64 max_food_last_sec = 4;               // 食物存储上限秒数
+    repeated FoodInfo food_list = 5;           // 狗粮库存列表
+    bool is_exist_new_log = 6;                 // 是否有未读看护日志
+    int64 pending_gift_count = 7;              // 可领同气礼包数量
+    repeated SkillUseInfo skill_use_infos = 8; // 技能使用信息
 }
 
-message DogFood {
+message FoodInfo {
+    int64 id = 1;                    // 狗粮ID（90004=普通1天/90005=高级3天/90006=极品5天）
+    int64 time = 2;                  // 单份时长（秒：86400/259200/432000）
+    int64 own_count = 3;             // 拥有数量
+}
+
+message SkillUseInfo {
+    int64 skill_id = 1;              // 技能ID
+    int64 daily_trigger_count = 2;   // 今日已触发次数
+    int64 max_trigger_daily = 3;     // 每日触发上限
+    int64 dog_id = 4;                // 对应宠物ID
+}
+
+// ---------- 激活 ----------
+message ActivateDogRequest {
+    int64 dog_id = 1;
+}
+
+message ActivateDogReply {
+    DogInfo dog = 1;
+}
+
+message BuyAndActivateDogRequest {
+    int64 dog_id = 1;
+    int64 price = 2;                 // 购买价格
+}
+
+message BuyAndActivateDogReply {
+    DogInfo dog = 1;
+    repeated corepb.Item cost_items = 2;    // 消耗物品
+}
+
+// ---------- 出战/收回 ----------
+message DeployDogRequest {
+    int64 dog_id = 1;                // 要出战的宠物ID
+}
+
+message DeployDogReply {
+    int64 deployed_dog_id = 1;           // 出战成功的宠物ID
+    int64 previous_deployed_dog_id = 2;  // 之前的出战宠物ID
+}
+
+message WithdrawDogRequest {
+    // 无参
+}
+
+message WithdrawDogReply {
+    int64 withdrawn_dog_id = 1;      // 被收回的宠物ID
+}
+
+// ---------- 投喂 ----------
+message AddFoodRequest {
+    int64 food_id = 1;               // 狗粮ID（90004/90005/90006）
+    int64 count = 2;                 // 数量
+}
+
+message AddFoodReply {
+    int64 food_last_sec = 1;         // 投喂后食物剩余秒数
+}
+
+// ---------- 看护日志 ----------
+message GetProtectLogsRequest {
+    int64 from = 1;                  // 起始位置
+    int64 count = 2;                 // 数量
+    int64 filter_type = 3;           // 筛选类型（0=全部）
+}
+
+message GetProtectLogsReply {
+    repeated ProtectLog logs = 1;
+    int64 total_count = 2;
+}
+
+message ProtectLog {
+    int64 role_level = 1;            // 小偷等级
+    string role_name = 2;            // 小偷昵称
+    string role_avatar_url = 3;      // 小偷头像
+    bool role_online = 4;            // 是否在线
+    int64 protect_timestamp = 5;     // 抓住时间戳
+    int64 protect_count = 6;         // 抓住次数
+    int64 reward_gold = 7;           // 奖励金币
+    int64 dog_id = 8;                // 抓人的宠物ID
+    string dog_name = 9;             // 宠物名
+    int64 gid = 10;                  // 小偷GID
+    int64 last_online_timestamp = 11;
+    bool is_read = 12;
+    int32 authorized_status = 13;
+    int64 record_type = 15;          // 记录类型
+    int64 skill_id = 16;             // 技能ID
+    string skill_name = 17;          // 技能名
+    int64 trigger_type = 18;
+    int64 param1 = 21;
+}
+
+// ---------- 同气礼包 ----------
+message ClaimSkillGiftsRequest {
+    // 无参
+}
+
+message ClaimSkillGiftsReply {
+    // 响应 f3 = 本次领取数量（见 dog-gifts.js 解析）
+}
+
+// ---------- 其它 ----------
+message SetDogCustomNameRequest {
+    int64 dog_id = 1;
+    string name = 2;
+}
+
+message SetDogCustomNameReply {
+    // 空
+}
+
+message EquipDogSkinRequest {
+    int64 skin_type = 1;
+    int64 dog_id = 2;
+}
+
+message EquipDogSkinReply {
+    // 空
+}
+
+message ViewDogRequest {
+    int64 dog_id = 1;
+}
+
+message ViewDogReply {
+    // 空
+}
+
+message MarkDogSkinViewedRequest {
+    int64 dog_id = 1;
+}
+
+message MarkDogSkinViewedReply {
+    // 空
+}
+
+message GetFriendFeedInfoRequest {
+    int64 host_gid = 1;              // 好友GID
+}
+
+message GetFriendFeedInfoReply {
+    repeated FoodInfo food_list = 1;         // 好友狗粮
+    repeated corepb.Item day_rewards = 2;           // 每日奖励
+    repeated corepb.Item fill_items = 3;            // 填充物品
+    int64 action = 4;                        // 动作类型
+    string friend_name = 5;                  // 好友名
+    int64 food_last_sec = 6;                 // 好友狗食物剩余
+    int64 max_food_last_sec = 7;             // 上限
+    int64 daily_feed_days = 8;               // 今日已投喂天数
+    int64 daily_limit_days = 9;              // 每日上限天数
+    bool can_fill = 10;                      // 能否继续投喂
+    string dog_custom_name = 11;             // 狗自定义名
+    int64 remain_days = 12;                  // 剩余天数
+}
+
+message FeedFriendDogRequest {
+    int64 host_gid = 1;              // 好友GID
+    repeated FoodItem foods = 2;     // 投喂列表 {id, count}
+    bool fill = 3;                   // 是否填满
+    string request_id = 4;           // 请求ID
+}
+
+message FoodItem {
     int64 id = 1;
-    int64 duration = 2;
-    int32 count = 3;
+    int64 count = 2;
+}
+
+message FeedFriendDogReply {
+    repeated corepb.Item cost_items = 1;    // 消耗
+    repeated corepb.Item granted_items = 2; // 获得
+    int64 feed_days = 3;             // 投喂天数
+    int64 food_last_sec = 4;         // 食物剩余
+    int64 daily_feed_days = 5;       // 每日已投喂
 }

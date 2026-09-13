@@ -449,6 +449,7 @@ function formatGrowTime(seconds: any) {
                   <div class="mt-1 flex items-center gap-2">
                     <span class="rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-500 font-medium dark:bg-gray-700">Lv{{ formatLv(item.level) }}</span>
                     <span class="text-xs text-gray-400">{{ item.seasons }}季</span>
+                    <span v-if="!item.hasPriceData" class="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-400 dark:bg-gray-700">无价格</span>
                   </div>
                 </div>
               </div>
@@ -549,7 +550,7 @@ function formatGrowTime(seconds: any) {
                         {{ formatGrowTime(item.growTime) }}
                       </div>
                       <div class="text-xs text-gray-400">
-                        {{ item.seasons }}季
+                        {{ item.seasons }}季<span v-if="item.seasons > 1"> · 全周期{{ formatGrowTime(item.totalCycleTime) }}</span>
                       </div>
                     </td>
                     <td class="px-4 py-2 text-right">

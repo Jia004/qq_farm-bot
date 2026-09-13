@@ -45,7 +45,7 @@ const {
 } = require('../services/friend');
 const { getInteractRecords } = require('../services/interact');
 const { processInviteCodes, sendReportArkClick } = require('../services/invite');
-const { getDogGiftStatus, claimDogGifts } = require('../services/dog-gifts');
+const { getDogGiftStatus, claimDogGifts, getDogPanelData, deployDog, withdrawDog, addDogFood, activateDog, getProtectLogs } = require('../services/dog-gifts');
 const {
     autoBuyFertilizer,
     checkAndBuyFertilizerBoth,
@@ -853,6 +853,34 @@ async function handleApiCall(msg) {
             case 'claimDogGifts':
                 // 护主犬同气礼包：领取（ClaimSkillGifts 无参）
                 result = await claimDogGifts();
+                break;
+            case 'getDogPanelData':
+                // 宠物面板：全量数据（宠物列表/出战/食物/礼包）
+                result = await getDogPanelData();
+                break;
+            case 'deployDog':
+                // 宠物出战护农
+                result = await deployDog(Number(args[0]) || 0);
+                break;
+            case 'withdrawDog':
+                // 宠物收回
+                result = await withdrawDog();
+                break;
+            case 'addDogFood':
+                // 投喂狗粮
+                result = await addDogFood(Number(args[0]) || 0, Math.max(1, Number(args[1]) || 1));
+                break;
+            case 'activateDog':
+                // 激活宠物
+                result = await activateDog(Number(args[0]) || 0);
+                break;
+            case 'getDogProtectLogs':
+                // 看护日志
+                result = await getProtectLogs({
+                    from: Number(args[0]) || 0,
+                    count: Math.max(1, Number(args[1]) || 50),
+                    filterType: Number(args[2]) || 0,
+                });
                 break;
             case 'getSeeds':
                 result = await getAvailableSeeds();

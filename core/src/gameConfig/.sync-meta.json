@@ -17,17 +17,17 @@
   "tables": [
     {
       "table": "ItemInfo",
-      "before": 716,
+      "before": 775,
       "after": 775,
-      "added": 59,
-      "updated": 117
+      "added": 0,
+      "updated": 0
     },
     {
       "table": "Plant",
-      "before": 255,
+      "before": 270,
       "after": 270,
-      "added": 15,
-      "updated": 3
+      "added": 0,
+      "updated": 0
     },
     {
       "table": "RoleLevel",
@@ -37,5 +37,5 @@
       "updated": 0
     }
   ],
-  "updatedAt": "2026-09-13T14:09:23.212Z"
+  "updatedAt": "2026-09-13T15:14:50.256Z"
 }

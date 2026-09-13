@@ -25,7 +25,7 @@ import { useAppStore } from '@/stores/app'
 const FarmPanel = defineAsyncComponent(() => import('@/components/FarmPanel.vue'))
 const BagPanel = defineAsyncComponent(() => import('@/components/BagPanel.vue'))
 const TaskPanel = defineAsyncComponent(() => import('@/components/TaskPanel.vue'))
-const DogGiftsPanel = defineAsyncComponent(() => import('@/components/DogGiftsPanel.vue'))
+const PetPanel = defineAsyncComponent(() => import('@/components/PetPanel.vue'))
 const FriendsTabContent = defineAsyncComponent(() => import('@/components/DashboardFriendsTab.vue'))
 const AutomationSettingsTab = defineAsyncComponent(() => import('@/components/settings/AutomationSettingsTab.vue'))
 const StrategySettingsTab = defineAsyncComponent(() => import('@/components/settings/StrategySettingsTab.vue'))
@@ -1402,9 +1402,9 @@ useIntervalFn(updateCountdowns, 1000)
       <TaskPanel />
     </div>
 
-    <!-- 宠物（护主犬同气礼包） -->
+    <!-- 宠物（护主犬：列表/出战/投喂/礼包） -->
     <div v-if="visitedTabs.pet" v-show="activeTab === 'pet'" class="h-full">
-      <DogGiftsPanel
+      <PetPanel
         :account-id="currentAccountId"
         :account-running="currentAccountRunning"
       />

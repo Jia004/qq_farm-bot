@@ -26,6 +26,15 @@ let mutantEffectConfig = null;
 const mutantEffectMap = new Map();       // mutantId → mutantEffect
 const mutantEffectByIconMap = new Map(); // icon → mutantEffect
 
+// 宠物配置（DogCfg / FoodCfg / DogSkill）
+let dogCfgConfig = null;
+const dogCfgMap = new Map();   // dogId → DogCfg
+let foodCfgConfig = null;
+const foodCfgMap = new Map();  // foodId → FoodCfg
+let dogSkillConfig = null;
+const dogSkillMap = new Map(); // skillId → DogSkill
+
+
 /** 加载所有游戏配置文件 */
 function loadConfigs() {
     const basePath = getResourcePath('gameConfig');
@@ -191,6 +200,50 @@ function loadConfigs() {
         }
     } catch (err) {
         console.warn('[配置] 加载 MutantEffect.json 失败:', err.message);
+    }
+
+    // 7. 加载宠物配置（DogCfg / FoodCfg / DogSkill）
+    try {
+        const dogCfgPath = path.join(basePath, 'DogCfg.json');
+        if (fs.existsSync(dogCfgPath)) {
+            dogCfgConfig = JSON.parse(fs.readFileSync(dogCfgPath, 'utf8'));
+            dogCfgMap.clear();
+            for (const dog of dogCfgConfig) {
+                const dogId = Number(dog && dog.id) || 0;
+                if (dogId > 0) dogCfgMap.set(dogId, dog);
+            }
+            console.warn(`[配置] 已加载宠物配置 (${  dogCfgConfig.length  } 只)`);
+        }
+    } catch (err) {
+        console.warn('[配置] 加载 DogCfg.json 失败:', err.message);
+    }
+    try {
+        const foodCfgPath = path.join(basePath, 'FoodCfg.json');
+        if (fs.existsSync(foodCfgPath)) {
+            foodCfgConfig = JSON.parse(fs.readFileSync(foodCfgPath, 'utf8'));
+            foodCfgMap.clear();
+            for (const food of foodCfgConfig) {
+                const foodId = Number(food && food.id) || 0;
+                if (foodId > 0) foodCfgMap.set(foodId, food);
+            }
+            console.warn(`[配置] 已加载狗粮配置 (${  foodCfgConfig.length  } 种)`);
+        }
+    } catch (err) {
+        console.warn('[配置] 加载 FoodCfg.json 失败:', err.message);
+    }
+    try {
+        const skillPath = path.join(basePath, 'DogSkill.json');
+        if (fs.existsSync(skillPath)) {
+            dogSkillConfig = JSON.parse(fs.readFileSync(skillPath, 'utf8'));
+            dogSkillMap.clear();
+            for (const skill of dogSkillConfig) {
+                const skillId = Number(skill && skill.id) || 0;
+                if (skillId > 0) dogSkillMap.set(skillId, skill);
+            }
+            console.warn(`[配置] 已加载宠物技能配置 (${  dogSkillConfig.length  } 种)`);
+        }
+    } catch (err) {
+        console.warn('[配置] 加载 DogSkill.json 失败:', err.message);
     }
 }
 
@@ -514,6 +567,36 @@ function getMutantEffectsByIds(ids) {
 // 启动时加载配置
 loadConfigs();
 
+/** 获取全部宠物配置 */
+function getAllDogConfigs() {
+    return dogCfgConfig || [];
+}
+
+/** 根据宠物ID获取配置 */
+function getDogConfigById(dogId) {
+    return dogCfgMap.get(Number(dogId) || 0) || null;
+}
+
+/** 获取全部狗粮配置 */
+function getAllFoodConfigs() {
+    return foodCfgConfig || [];
+}
+
+/** 根据狗粮ID获取配置 */
+function getFoodConfigById(foodId) {
+    return foodCfgMap.get(Number(foodId) || 0) || null;
+}
+
+/** 获取全部宠物技能配置 */
+function getAllDogSkillConfigs() {
+    return dogSkillConfig || [];
+}
+
+/** 根据技能ID获取宠物技能配置 */
+function getDogSkillConfigById(skillId) {
+    return dogSkillMap.get(Number(skillId) || 0) || null;
+}
+
 module.exports = {
     loadConfigs,
     getAllPlants,
@@ -543,5 +626,11 @@ module.exports = {
     getMutantEffectById,
     getMutantEffectByIcon,
     getAllMutantEffects,
-    getMutantEffectsByIds
+    getMutantEffectsByIds,
+    getAllDogConfigs,
+    getDogConfigById,
+    getAllFoodConfigs,
+    getFoodConfigById,
+    getAllDogSkillConfigs,
+    getDogSkillConfigById
 };

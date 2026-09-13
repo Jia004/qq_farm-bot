@@ -151,6 +151,13 @@ function createDataProvider(deps) {
         // 护主犬同气礼包：查询可领数量 / 领取
         getDogGiftStatus: (ref) => callWorkerApi(resolveAccountId(ref), 'getDogGiftStatus'),
         claimDogGifts: (ref) => callWorkerApi(resolveAccountId(ref), 'claimDogGifts'),
+        // 宠物面板：全量数据 / 出战 / 收回 / 投喂 / 激活 / 看护日志
+        getDogPanelData: (ref) => callWorkerApi(resolveAccountId(ref), 'getDogPanelData'),
+        deployDog: (ref, dogId) => callWorkerApi(resolveAccountId(ref), 'deployDog', dogId),
+        withdrawDog: (ref) => callWorkerApi(resolveAccountId(ref), 'withdrawDog'),
+        addDogFood: (ref, foodId, count) => callWorkerApi(resolveAccountId(ref), 'addDogFood', foodId, count),
+        activateDog: (ref, dogId) => callWorkerApi(resolveAccountId(ref), 'activateDog', dogId),
+        getDogProtectLogs: (ref, from, count, filterType) => callWorkerApi(resolveAccountId(ref), 'getDogProtectLogs', from, count, filterType),
 
         // ========== 仓库 ==========
         useItem: (ref, itemId, count) => callWorkerApi(resolveAccountId(ref), 'useItem', itemId, count),

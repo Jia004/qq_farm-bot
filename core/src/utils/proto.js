@@ -195,6 +195,36 @@ async function loadProto() {
     types.VisitLeaveReply = root.lookupType('gamepb.visitpb.LeaveReply');
     types.BriefDogInfo = root.lookupType('gamepb.visitpb.BriefDogInfo');
 
+    // 宠物（护主犬）
+    types.DogInfo = root.lookupType('gamepb.dogpb.DogInfo');
+    types.GetDogInfoRequest = root.lookupType('gamepb.dogpb.GetDogInfoRequest');
+    types.GetDogInfoReply = root.lookupType('gamepb.dogpb.GetDogInfoReply');
+    types.FoodInfo = root.lookupType('gamepb.dogpb.FoodInfo');
+    types.SkillUseInfo = root.lookupType('gamepb.dogpb.SkillUseInfo');
+    types.ActivateDogRequest = root.lookupType('gamepb.dogpb.ActivateDogRequest');
+    types.ActivateDogReply = root.lookupType('gamepb.dogpb.ActivateDogReply');
+    types.BuyAndActivateDogRequest = root.lookupType('gamepb.dogpb.BuyAndActivateDogRequest');
+    types.BuyAndActivateDogReply = root.lookupType('gamepb.dogpb.BuyAndActivateDogReply');
+    types.DeployDogRequest = root.lookupType('gamepb.dogpb.DeployDogRequest');
+    types.DeployDogReply = root.lookupType('gamepb.dogpb.DeployDogReply');
+    types.WithdrawDogRequest = root.lookupType('gamepb.dogpb.WithdrawDogRequest');
+    types.WithdrawDogReply = root.lookupType('gamepb.dogpb.WithdrawDogReply');
+    types.AddFoodRequest = root.lookupType('gamepb.dogpb.AddFoodRequest');
+    types.AddFoodReply = root.lookupType('gamepb.dogpb.AddFoodReply');
+    types.GetProtectLogsRequest = root.lookupType('gamepb.dogpb.GetProtectLogsRequest');
+    types.GetProtectLogsReply = root.lookupType('gamepb.dogpb.GetProtectLogsReply');
+    types.ProtectLog = root.lookupType('gamepb.dogpb.ProtectLog');
+    types.SetDogCustomNameRequest = root.lookupType('gamepb.dogpb.SetDogCustomNameRequest');
+    types.SetDogCustomNameReply = root.lookupType('gamepb.dogpb.SetDogCustomNameReply');
+    types.EquipDogSkinRequest = root.lookupType('gamepb.dogpb.EquipDogSkinRequest');
+    types.EquipDogSkinReply = root.lookupType('gamepb.dogpb.EquipDogSkinReply');
+    types.ViewDogRequest = root.lookupType('gamepb.dogpb.ViewDogRequest');
+    types.ViewDogReply = root.lookupType('gamepb.dogpb.ViewDogReply');
+    types.GetFriendFeedInfoRequest = root.lookupType('gamepb.dogpb.GetFriendFeedInfoRequest');
+    types.GetFriendFeedInfoReply = root.lookupType('gamepb.dogpb.GetFriendFeedInfoReply');
+    types.FeedFriendDogRequest = root.lookupType('gamepb.dogpb.FeedFriendDogRequest');
+    types.FeedFriendDogReply = root.lookupType('gamepb.dogpb.FeedFriendDogReply');
+
 
     // 任务
     types.TaskInfoRequest = root.lookupType('gamepb.taskpb.TaskInfoRequest');

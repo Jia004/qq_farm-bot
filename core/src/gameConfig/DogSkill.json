@@ -1,0 +1,57 @@
+[
+  {
+    "id": 1001,
+    "dog_id": null,
+    "name": "忠心护主",
+    "desc": "<b>作物被偷时，有<color = #72b138>10%</color>概率触发看护，成功后扣除偷窃者一定金币。</b>",
+    " cooldown_sec ": null,
+    "random_pack_id": null,
+    "max_trigger_daily": -1,
+    "icon": "gui/texture/petdog/dogSkill/img_dog_skill1/spriteFrame",
+    "skill_trigger_type": 2
+  },
+  {
+    "id": 1002,
+    "dog_id": null,
+    "name": "忠心护主",
+    "desc": "<b>作物被偷时，有<color = #72b138>30%</color>概率触发看护，成功后扣除偷窃者一定金币。</b>",
+    " cooldown_sec ": null,
+    "random_pack_id": null,
+    "max_trigger_daily": -1,
+    "icon": "gui/texture/petdog/dogSkill/img_dog_skill1/spriteFrame",
+    "skill_trigger_type": 2
+  },
+  {
+    "id": 1003,
+    "dog_id": null,
+    "name": "忠心护主",
+    "desc": "<b>作物被偷时，有<color = #72b138>50%</color>概率触发看护，成功后扣除偷窃者一定金币。</b>",
+    " cooldown_sec ": null,
+    "random_pack_id": null,
+    "max_trigger_daily": -1,
+    "icon": "gui/texture/petdog/dogSkill/img_dog_skill1/spriteFrame",
+    "skill_trigger_type": 2
+  },
+  {
+    "id": 2001,
+    "dog_id": 90021,
+    "name": "同气连枝",
+    "desc": "<b>好友前来农场互助<color=#72b138>(浇水/除草/除虫)</color>时，有概率掉落<color=#eb9021>同气连枝礼包</color>(每日限30次)，主人与好友均可获得奖励。</b>",
+    " cooldown_sec ": null,
+    "random_pack_id": 101351,
+    "max_trigger_daily": 30,
+    "icon": "gui/texture/petdog/dogSkill/img_dog_skill2/spriteFrame",
+    "skill_trigger_type": 2
+  },
+  {
+    "id": 3001,
+    "dog_id": 90031,
+    "name": "比熊润田",
+    "desc": "<b>看护状态下，作物有概率触发<color=#72b138>比熊变异（售价 ×4）</color>，可叠加冰冻、爱心、暗化、湿润等变异效果。</b>",
+    " cooldown_sec ": null,
+    "random_pack_id": null,
+    "max_trigger_daily": null,
+    "icon": "gui/texture/petdog/dogSkill/img_dog_skill3/spriteFrame",
+    "skill_trigger_type": 2
+  }
+]

@@ -1,0 +1,20 @@
+[
+  {
+    "id": 90004,
+    "name": "普通狗粮",
+    "time": 86400,
+    "icon_path": "gui/texture/petdog/dogfood/gouliang01/spriteFrame"
+  },
+  {
+    "id": 90005,
+    "name": "高级狗粮",
+    "time": 259200,
+    "icon_path": "gui/texture/petdog/dogfood/gouliang02/spriteFrame"
+  },
+  {
+    "id": 90006,
+    "name": "极品狗粮",
+    "time": 432000,
+    "icon_path": "gui/texture/petdog/dogfood/gouliang03/spriteFrame"
+  }
+]
