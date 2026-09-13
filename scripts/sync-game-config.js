@@ -833,7 +833,8 @@ async function cmdIcons(opts) {
     if (!m) continue;
     // 种子解锁卡等用的是 icon_card_crop_* —— 客户端「卡面底图 + 种子图」动态合成，
     // 全量扫描 234 个图集与所有 bundle 清单均无此静态资源；前端靠 asset_name 回退显示
-    if (/icon_card_crop_/.test(m[1])) {
+    // 自选礼包 giftpack_* 同类（客户端运行时按礼包内容合成）
+    if (/icon_card_crop_|^giftpack_/.test(m[1])) {
       dynamicSkip.push({ id, name: it.name || '', sprite: m[1] });
       continue;
     }
