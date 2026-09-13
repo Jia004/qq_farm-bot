@@ -10,6 +10,7 @@ interface BagSeedItem {
 defineProps<{
   seeds: BagSeedItem[]
   sortedSeeds: BagSeedItem[]
+  excludedSeeds?: BagSeedItem[]
   loading: boolean
   error: string | null
 }>()
@@ -18,6 +19,7 @@ const emit = defineEmits<{
   reset: []
   move: [seedId: number, direction: -1 | 1]
   remove: [seedId: number]
+  restore: [seedId: number]
   dragStart: [seedId: number, event: DragEvent]
   dragOver: [seedId: number, event: DragEvent]
   drop: [seedId: number, event: DragEvent]
@@ -33,6 +35,7 @@ const emit = defineEmits<{
         </div>
         <p class="mt-1 text-xs text-amber-700/90 dark:text-amber-300/90">
           先按下方顺序消耗背包种子；开启 2×2 优先时，四格种子会先用于预留区域，其余空地再按第二优先策略补种。
+          背包中新获得的种子会自动追加到列表末尾。
         </p>
       </div>
       <button
@@ -80,7 +83,7 @@ const emit = defineEmits<{
         <div class="flex shrink-0 flex-col gap-1">
           <button
             class="rounded p-1 text-gray-400 transition hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-900/20"
-            title="移出优先列表"
+            title="移出优先列表（不再参与背包优先种植）"
             aria-label="移出优先列表"
             @click="emit('remove', seed.seedId)"
           >
@@ -101,6 +104,27 @@ const emit = defineEmits<{
             <div class="i-carbon-arrow-down text-sm" />
           </button>
         </div>
+      </div>
+    </div>
+
+    <!-- 已跳过区：被用户移出且不会被自动追加回来的种子 -->
+    <div v-if="!loading && !error && excludedSeeds && excludedSeeds.length > 0" class="border-t border-amber-200/70 pt-3 dark:border-amber-700/40">
+      <div class="flex items-center gap-2 text-xs text-amber-700/90 dark:text-amber-300/90">
+        <span class="i-carbon-skip-forward" />
+        已跳过（不参与背包优先种植）— {{ excludedSeeds.length }} 颗
+      </div>
+      <div class="mt-2 flex flex-wrap gap-2">
+        <button
+          v-for="seed in excludedSeeds"
+          :key="seed.seedId"
+          class="flex items-center gap-1.5 border border-amber-200 rounded-lg bg-white/70 px-2 py-1 text-xs text-gray-600 transition dark:border-amber-700/40 dark:bg-gray-800/70 dark:text-gray-300 hover:border-amber-300 hover:bg-white dark:hover:bg-gray-800"
+          :title="`恢复「${seed.name}」到优先列表`"
+          @click="emit('restore', seed.seedId)"
+        >
+          <span class="i-carbon-undo text-sm text-amber-600 dark:text-amber-400" />
+          {{ seed.name }}
+          <span class="text-gray-400 dark:text-gray-500">({{ seed.count }})</span>
+        </button>
       </div>
     </div>
   </div>

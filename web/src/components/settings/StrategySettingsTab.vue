@@ -55,6 +55,7 @@ withDefaults(defineProps<{
   strategyPreviewLabel: string | null
   bagSeeds: BagSeedItem[]
   sortedBagSeeds: BagSeedItem[]
+  excludedBagSeeds?: BagSeedItem[]
   bagSeedsLoading: boolean
   bagSeedsError: string | null
   title?: string
@@ -68,6 +69,7 @@ const emit = defineEmits<{
   resetBagSeedPriority: []
   moveBagSeed: [seedId: number, direction: -1 | 1]
   removeBagSeed: [seedId: number]
+  restoreBagSeed: [seedId: number]
   startBagSeedDrag: [seedId: number, event: DragEvent]
   dragOverBagSeed: [seedId: number, event: DragEvent]
   dropBagSeed: [seedId: number, event: DragEvent]
@@ -183,11 +185,13 @@ const bagPriorityLandTypeOptions = [
         <BagSeedPriorityPanel
           :seeds="bagSeeds"
           :sorted-seeds="sortedBagSeeds"
+          :excluded-seeds="excludedBagSeeds"
           :loading="bagSeedsLoading"
           :error="bagSeedsError"
           @reset="emit('resetBagSeedPriority')"
           @move="(seedId, direction) => emit('moveBagSeed', seedId, direction)"
           @remove="seedId => emit('removeBagSeed', seedId)"
+          @restore="seedId => emit('restoreBagSeed', seedId)"
           @drag-start="(seedId, event) => emit('startBagSeedDrag', seedId, event)"
           @drag-over="(seedId, event) => emit('dragOverBagSeed', seedId, event)"
           @drop="(seedId, event) => emit('dropBagSeed', seedId, event)"

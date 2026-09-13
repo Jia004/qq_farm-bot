@@ -319,11 +319,13 @@ const {
   bagSeedsLoading,
   bagSeedsError,
   sortedBagSeeds,
+  excludedBagSeeds,
   preferredSeedOptions,
   strategyPreviewLabel,
   resetBagSeedPriority,
   moveBagSeed,
   removeBagSeedPriority,
+  restoreBagSeed,
   startBagSeedDrag,
   dragOverBagSeed,
   dropBagSeed,
@@ -1436,11 +1438,13 @@ useIntervalFn(updateCountdowns, 1000)
         :strategy-preview-label="strategyPreviewLabel"
         :bag-seeds="bagSeeds"
         :sorted-bag-seeds="sortedBagSeeds"
+        :excluded-bag-seeds="excludedBagSeeds"
         :bag-seeds-loading="bagSeedsLoading"
         :bag-seeds-error="bagSeedsError"
         @reset-bag-seed-priority="resetBagSeedPriority"
         @move-bag-seed="moveBagSeed"
         @remove-bag-seed="removeBagSeedPriority"
+        @restore-bag-seed="restoreBagSeed"
         @start-bag-seed-drag="startBagSeedDrag"
         @drag-over-bag-seed="dragOverBagSeed"
         @drop-bag-seed="dropBagSeed"

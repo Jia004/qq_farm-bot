@@ -604,48 +604,70 @@ async function plantFromBagSeeds(emptyLandIds, accountId = getCurrentAccountId()
   const batches = [];
   const rejectedSeeds = [];
 
-  for (const seed of availableSeeds) {
-    if (remainingIds.length === 0) break;
+  // 逐颗尝试一批种子（主流程与兜底流程共用同一套记账逻辑）
+  const plantSeedBatch = async (seedList) => {
+    for (const seed of seedList) {
+      if (remainingIds.length === 0) break;
 
-    const maxCount = Math.min(
-      Number(seed.count || 0),
-      remainingIds.length
+      const maxCount = Math.min(
+        Number(seed.count || 0),
+        remainingIds.length
+      );
+      if (maxCount <= 0) continue;
+
+      const plantResult = await plantSeeds(seed.seedId, remainingIds, { maxPlantCount: maxCount });
+      const occupiedIds = (Array.isArray(plantResult.occupiedLandIds) ? plantResult.occupiedLandIds : [])
+        .map(Number).filter(id => id > 0);
+      const plantedIds = (Array.isArray(plantResult.plantedLandIds) ? plantResult.plantedLandIds : [])
+        .map(Number).filter(id => id > 0);
+
+      if (plantResult.planted > 0) {
+        totalPlanted += plantResult.planted;
+        totalOccupied += occupiedIds.length > 0 ? occupiedIds.length : plantResult.planted;
+        allPlantedIds.push(...plantedIds);
+        remainingIds = remainingIds.filter(id => !occupiedIds.includes(id));
+        batches.push(`${seed.name  }x${  plantResult.planted}`);
+      }
+
+      if (plantResult.planted === 0) {
+        // 该种子在当前条件下完全种不了（例如未解锁/等级不足/已被服务器拒绝）。
+        // 记下来并继续尝试下一颗种子——旧实现会因此整轮放弃导致"什么都种不了"。
+        rejectedSeeds.push(seed.name);
+        logWarn('种植', `背包种子 ${seed.name} 本次无法种植，已跳过（不影响后续种子）`, {
+          module: 'farm', event: '种植种子', result: 'seed_rejected',
+          seedId: seed.seedId, requested: maxCount, lockedCount: plantResult.lockedCount || 0,
+        });
+        continue;
+      }
+
+      // 部分成功：剩余空地存在但该种子数量不足/部分地块不可用。
+      // 此时不再回退商店买种，避免误购（保持原有防误购语义）。
+      if (plantResult.planted < maxCount && remainingIds.length > 0) {
+        fallbackAllowed = false;
+        logWarn('种植', `背包种子 ${seed.name} 实际种植 ${plantResult.planted}/${maxCount}，为避免误购商店种子，本轮不执行第二优先策略`, {
+          module: 'farm', event: '种植种子', result: 'partial_bag_failure',
+          seedId: seed.seedId, requested: maxCount, planted: plantResult.planted
+        });
+      }
+    }
+  };
+
+  await plantSeedBatch(availableSeeds);
+
+  // 兜底：优先列表内种子本轮全部失败时（列表保存较早、种子因活动结束/等级变化等
+  // 原因已不可种），再尝试背包中未列入优先的其余可用种子——旧实现会让整轮颗粒无收，
+  // 用户表现为「什么都种不了」。
+  if (totalPlanted === 0 && customPrioritySeeds.length > 0 && remainingIds.length > 0) {
+    const otherBagSeeds = sortBagSeedsForPlanting(
+      usableBagSeeds.filter(s => !prioritySet.has(Number(s.seedId))),
+      []
     );
-    if (maxCount <= 0) continue;
-
-    const plantResult = await plantSeeds(seed.seedId, remainingIds, { maxPlantCount: maxCount });
-    const occupiedIds = (Array.isArray(plantResult.occupiedLandIds) ? plantResult.occupiedLandIds : [])
-      .map(Number).filter(id => id > 0);
-    const plantedIds = (Array.isArray(plantResult.plantedLandIds) ? plantResult.plantedLandIds : [])
-      .map(Number).filter(id => id > 0);
-
-    if (plantResult.planted > 0) {
-      totalPlanted += plantResult.planted;
-      totalOccupied += occupiedIds.length > 0 ? occupiedIds.length : plantResult.planted;
-      allPlantedIds.push(...plantedIds);
-      remainingIds = remainingIds.filter(id => !occupiedIds.includes(id));
-      batches.push(`${seed.name  }x${  plantResult.planted}`);
-    }
-
-    if (plantResult.planted === 0) {
-      // 该种子在当前条件下完全种不了（例如未解锁/等级不足/已被服务器拒绝）。
-      // 记下来并继续尝试下一颗种子——旧实现会因此整轮放弃导致"什么都种不了"。
-      rejectedSeeds.push(seed.name);
-      logWarn('种植', `背包种子 ${seed.name} 本次无法种植，已跳过（不影响后续种子）`, {
-        module: 'farm', event: '种植种子', result: 'seed_rejected',
-        seedId: seed.seedId, requested: maxCount, lockedCount: plantResult.lockedCount || 0,
+    if (otherBagSeeds.length > 0) {
+      logWarn('种植', `优先列表内 ${availableSeeds.length} 颗种子本轮均无法种植，兜底尝试背包中其他 ${otherBagSeeds.length} 颗可用种子`, {
+        module: 'farm', event: '种植种子', result: 'priority_fallback_to_other_bag_seeds',
+        triedSeeds: availableSeeds.map(s => Number(s.seedId)),
       });
-      continue;
-    }
-
-    // 部分成功：剩余空地存在但该种子数量不足/部分地块不可用。
-    // 此时不再回退商店买种，避免误购（保持原有防误购语义）。
-    if (plantResult.planted < maxCount && remainingIds.length > 0) {
-      fallbackAllowed = false;
-      logWarn('种植', `背包种子 ${seed.name} 实际种植 ${plantResult.planted}/${maxCount}，为避免误购商店种子，本轮不执行第二优先策略`, {
-        module: 'farm', event: '种植种子', result: 'partial_bag_failure',
-        seedId: seed.seedId, requested: maxCount, planted: plantResult.planted
-      });
+      await plantSeedBatch(otherBagSeeds);
     }
   }
 

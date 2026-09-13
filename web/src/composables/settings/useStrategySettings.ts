@@ -79,18 +79,57 @@ export function useStrategySettings({
   const bagSeedsLoading = ref(false)
   const bagSeedsError = ref<string | null>(null)
   const draggingBagSeedId = ref<number | null>(null)
+  // 「已跳过」的种子（用户点 × 移除过的）：不参与背包优先种植，也不会被
+  // 「新种子自动追加」逻辑重新显示。按账号隔离持久化在 localStorage，
+  // 避免"移出后一刷新又回来"。
+  const bagSeedExcluded = ref<Set<number>>(new Set())
   let bagSeedsRequestId = 0
   let strategyPreviewRequestId = 0
 
+  const BAG_SEED_EXCLUDED_PREFIX = 'qqfarm:bagSeedExcluded:'
+
+  function readBagSeedExcluded(accountId: string | number): Set<number> {
+    try {
+      const raw = localStorage.getItem(BAG_SEED_EXCLUDED_PREFIX + String(accountId))
+      if (!raw)
+        return new Set()
+      const parsed = JSON.parse(raw)
+      if (!Array.isArray(parsed))
+        return new Set()
+      return new Set(parsed.map(Number).filter((id: number) => Number.isInteger(id) && id > 0))
+    }
+    catch {
+      return new Set()
+    }
+  }
+
+  function persistBagSeedExcluded() {
+    const accountId = currentAccountId.value
+    if (!accountId)
+      return
+    try {
+      const key = BAG_SEED_EXCLUDED_PREFIX + String(accountId)
+      if (bagSeedExcluded.value.size === 0)
+        localStorage.removeItem(key)
+      else
+        localStorage.setItem(key, JSON.stringify([...bagSeedExcluded.value]))
+    }
+    catch {
+      // localStorage 不可用时忽略（仅损失跨会话记忆）
+    }
+  }
+
   const sortedBagSeeds = computed(() => {
     const priority = localStrategySettings.value.bagSeedPriority || []
+    const excluded = bagSeedExcluded.value
     const seedMap = new Map(bagSeeds.value.map(seed => [Number(seed.seedId), seed]))
     const orderedSeeds: BagSeedItem[] = []
     const seen = new Set<number>()
 
+    // 1) 先按用户保存的优先级顺序排列
     for (const rawSeedId of priority) {
       const seedId = Number(rawSeedId)
-      if (!seedId || seen.has(seedId))
+      if (!seedId || seen.has(seedId) || excluded.has(seedId))
         continue
       const seed = seedMap.get(seedId)
       if (!seed)
@@ -99,8 +138,55 @@ export function useStrategySettings({
       orderedSeeds.push(seed)
     }
 
+    // 2) 再追加背包中「有但不在优先列表里」的种子（新获得/早期漏掉的种子）。
+    //    旧实现只返回第 1 步的结果——若优先列表是早期保存的，新种子永远不显示，
+    //    表现为「只读取到很早的种子」。
+    for (const seed of bagSeeds.value) {
+      const seedId = Number(seed.seedId)
+      if (!seedId || seen.has(seedId) || excluded.has(seedId))
+        continue
+      seen.add(seedId)
+      orderedSeeds.push(seed)
+    }
+
     return orderedSeeds
   })
+
+  // 「已跳过」区展示数据（背包中确实存在但被用户移除的种子）
+  const excludedBagSeeds = computed(() =>
+    bagSeeds.value.filter(seed => bagSeedExcluded.value.has(Number(seed.seedId))),
+  )
+
+  /**
+   * 把背包种子合并进优先列表：
+   * - 保留用户已有顺序（含暂时用完、不在背包中的种子——避免补货后丢失位置）
+   * - 剔除用户明确跳过的
+   * - 背包中新获得、未跳过、未列入的种子自动追加到末尾 → 保存后即可被种植
+   */
+  function syncBagSeedPriorityWithBag() {
+    if (!bagSeeds.value.length)
+      return
+    const excluded = bagSeedExcluded.value
+    const merged: number[] = []
+    const seen = new Set<number>()
+    // 注意：不按「当前是否在背包」过滤已有 ID——种子暂时耗尽时仍保留其位置，
+    // 补货后无需重新排队。
+    for (const rawSeedId of localStrategySettings.value.bagSeedPriority || []) {
+      const seedId = Number(rawSeedId)
+      if (!seedId || seen.has(seedId) || excluded.has(seedId))
+        continue
+      seen.add(seedId)
+      merged.push(seedId)
+    }
+    for (const seed of bagSeeds.value) {
+      const seedId = Number(seed.seedId)
+      if (!seedId || seen.has(seedId) || excluded.has(seedId))
+        continue
+      seen.add(seedId)
+      merged.push(seedId)
+    }
+    localStrategySettings.value.bagSeedPriority = merged
+  }
 
   async function fetchBagSeeds() {
     const accountId = currentAccountId.value
@@ -110,6 +196,8 @@ export function useStrategySettings({
     const requestId = ++bagSeedsRequestId
     bagSeedsLoading.value = true
     bagSeedsError.value = null
+    // 切换账号时同步该账号的「已跳过」记忆
+    bagSeedExcluded.value = readBagSeedExcluded(accountId)
     try {
       const res = await api.get('/api/bag/seeds', {
         headers: { 'x-account-id': accountId },
@@ -118,8 +206,11 @@ export function useStrategySettings({
         return
       if (res.data.ok) {
         bagSeeds.value = res.data.data || []
-        if (!localStrategySettings.value.bagSeedPriority || localStrategySettings.value.bagSeedPriority.length === 0)
-          localStrategySettings.value.bagSeedPriority = bagSeeds.value.map(seed => Number(seed.seedId)).filter(seedId => seedId > 0)
+        // 合并：保留已保存顺序 + 自动追加背包中未列入（且未跳过）的新种子。
+        // 这样「背包种子优先」既能消耗到新获得的种子，又不会因优先列表
+        // 过期而显示不到它们。列表为空时也走同一逻辑（避免把已跳过的
+        // 种子重新加回来）。
+        syncBagSeedPriorityWithBag()
       }
     }
     catch (e: any) {
@@ -133,29 +224,79 @@ export function useStrategySettings({
   }
 
   function resetBagSeedPriority() {
+    bagSeedExcluded.value = new Set()
+    persistBagSeedExcluded()
     localStrategySettings.value.bagSeedPriority = bagSeeds.value.map(seed => Number(seed.seedId)).filter(seedId => seedId > 0)
   }
 
+  /**
+   * 完整优先顺序（含暂时用完、不在背包中的种子；剔除用户跳过的）。
+   * 移动/删除都应基于它——若基于「当前在背包」的子集会静默剔除已用完的种子。
+   */
   function getCurrentBagSeedOrder() {
-    return sortedBagSeeds.value.map(seed => Number(seed.seedId)).filter(seedId => seedId > 0)
+    const excluded = bagSeedExcluded.value
+    const order: number[] = []
+    const seen = new Set<number>()
+    for (const rawSeedId of localStrategySettings.value.bagSeedPriority || []) {
+      const seedId = Number(rawSeedId)
+      if (!seedId || seen.has(seedId) || excluded.has(seedId))
+        continue
+      seen.add(seedId)
+      order.push(seedId)
+    }
+    // 兜底：背包中有但列表未列入的（正常情况下 fetch 后已合并）
+    for (const seed of bagSeeds.value) {
+      const seedId = Number(seed.seedId)
+      if (!seedId || seen.has(seedId) || excluded.has(seedId))
+        continue
+      seen.add(seedId)
+      order.push(seedId)
+    }
+    return order
   }
 
   function moveBagSeed(seedId: number, direction: -1 | 1) {
-    const nextOrder = getCurrentBagSeedOrder()
-    const index = nextOrder.indexOf(seedId)
-    const targetIndex = index + direction
-    if (index < 0 || targetIndex < 0 || targetIndex >= nextOrder.length)
+    const displayedIds = sortedBagSeeds.value.map(seed => Number(seed.seedId))
+    const currentIndex = displayedIds.indexOf(seedId)
+    const targetIndex = currentIndex + direction
+    if (currentIndex < 0 || targetIndex < 0 || targetIndex >= displayedIds.length)
       return
+    const targetSeedId = displayedIds[targetIndex]!
 
-    const temp = nextOrder[index]!
-    nextOrder[index] = nextOrder[targetIndex]!
-    nextOrder[targetIndex] = temp
-    localStrategySettings.value.bagSeedPriority = nextOrder
+    // 交换两个种子在完整列表中的位置（未显示的种子保持原有相对顺序）
+    const full = getCurrentBagSeedOrder()
+    const p = full.indexOf(seedId)
+    const q = full.indexOf(targetSeedId)
+    if (p < 0 || q < 0)
+      return
+    const temp = full[p]!
+    full[p] = full[q]!
+    full[q] = temp
+    localStrategySettings.value.bagSeedPriority = full
   }
 
   function removeBagSeedPriority(seedId: number) {
+    const numericSeedId = Number(seedId)
+    // 记入「已跳过」——既从优先列表移除，也保证新种子自动追加逻辑
+    // 不会把它重新加回来（旧实现移出后又会被追加显示，无法真正跳过）。
+    const nextExcluded = new Set(bagSeedExcluded.value)
+    nextExcluded.add(numericSeedId)
+    bagSeedExcluded.value = nextExcluded
+    persistBagSeedExcluded()
     localStrategySettings.value.bagSeedPriority = getCurrentBagSeedOrder()
-      .filter(itemSeedId => itemSeedId !== Number(seedId))
+  }
+
+  function restoreBagSeed(seedId: number) {
+    const numericSeedId = Number(seedId)
+    const nextExcluded = new Set(bagSeedExcluded.value)
+    nextExcluded.delete(numericSeedId)
+    bagSeedExcluded.value = nextExcluded
+    persistBagSeedExcluded()
+    if (Number.isInteger(numericSeedId) && numericSeedId > 0) {
+      const current = localStrategySettings.value.bagSeedPriority || []
+      if (!current.map(Number).includes(numericSeedId))
+        localStrategySettings.value.bagSeedPriority = [...current, numericSeedId]
+    }
   }
 
   function startBagSeedDrag(seedId: number, event: DragEvent) {
@@ -344,6 +485,7 @@ export function useStrategySettings({
     bagSeedsLoading.value = false
     draggingBagSeedId.value = null
     strategyPreviewLabel.value = null
+    bagSeedExcluded.value = new Set()
   }
 
   return {
@@ -357,11 +499,13 @@ export function useStrategySettings({
     bagSeedsLoading,
     bagSeedsError,
     sortedBagSeeds,
+    excludedBagSeeds,
     preferredSeedOptions,
     strategyPreviewLabel,
     resetBagSeedPriority,
     moveBagSeed,
     removeBagSeedPriority,
+    restoreBagSeed,
     startBagSeedDrag,
     dragOverBagSeed,
     dropBagSeed,

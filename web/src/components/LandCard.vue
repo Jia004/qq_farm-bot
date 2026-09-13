@@ -212,7 +212,7 @@ function getPlantSizeText(targetLand: any) {
       <div class="rainbow-progress-bar">
         <div
           class="rainbow-progress-fill"
-          :style="{ width: `${growProgress}%` }"
+          :style="{ transform: `scaleX(${growProgress / 100})` }"
         />
       </div>
     </div>
@@ -341,18 +341,23 @@ function getPlantSizeText(targetLand: any) {
 
 .rainbow-progress-fill {
   height: 100%;
+  width: 100%;
   background: linear-gradient(90deg, #ff6b9d 0%, #ff9f43 20%, #ffd32a 40%, #26de81 60%, #45aaf2 80%, #a55eea 100%);
   border-radius: 10px;
-  transition: width 1s linear;
+  /* 卡顿治理：用 transform: scaleX 表达进度（由模板 style 传入），
+     不再用 width 过渡——width 每秒触发 layout+paint，24 张土地卡同时
+     跑会带来持续的排版抖动；scaleX 是纯合成层操作。 */
+  transform-origin: left center;
+  transition: transform 1s linear;
   position: relative;
   box-shadow:
     inset 0 2px 4px rgba(255, 255, 255, 0.6),
     inset 0 -1px 2px rgba(0, 0, 0, 0.1);
   /* 卡顿治理：原为 filter: brightness() 无限动画——filter 会强制每帧重新
-     paint，24 张土地卡同时跑时是首页掉帧的主因之一。改为 transform 呼吸
-     （纯合成层，GPU 友好）并保留「活着」的观感。 */
-  will-change: transform;
-  transform-origin: center;
+     paint，24 张土地卡同时跑时是首页掉帧的主因之一。改为 opacity 呼吸
+     （纯合成层，GPU 友好）。注意不能用 transform——那会覆盖模板传入的
+     进度 scaleX。 */
+  will-change: transform, opacity;
   animation: cute-pulse 2s ease-in-out infinite;
 }
 
@@ -372,10 +377,10 @@ function getPlantSizeText(targetLand: any) {
 @keyframes cute-pulse {
   0%,
   100% {
-    transform: scaleY(1);
+    opacity: 1;
   }
   50% {
-    transform: scaleY(1.12);
+    opacity: 0.72;
   }
 }
 

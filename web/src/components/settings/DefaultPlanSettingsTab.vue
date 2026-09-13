@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watchEffect } from 'vue'
+import { computed, onMounted, ref, watch, watchEffect } from 'vue'
 import api from '@/api'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import AutomationSettingsTab from '@/components/settings/AutomationSettingsTab.vue'
@@ -43,6 +43,41 @@ const exists = ref(false)
 const enabled = ref(true)
 const updatedAt = ref(0)
 let draggedSeedId: number | null = null
+
+// 「已跳过」的种子（点 × 移除过）：与首页策略面板共用同一份 localStorage 记忆
+const BAG_SEED_EXCLUDED_PREFIX = 'qqfarm:bagSeedExcluded:'
+const bagSeedExcluded = ref<Set<number>>(new Set())
+
+function readBagSeedExcluded(accountId: string | number): Set<number> {
+  try {
+    const raw = localStorage.getItem(BAG_SEED_EXCLUDED_PREFIX + String(accountId))
+    if (!raw)
+      return new Set()
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed))
+      return new Set()
+    return new Set(parsed.map(Number).filter((id: number) => Number.isInteger(id) && id > 0))
+  }
+  catch {
+    return new Set()
+  }
+}
+
+function persistBagSeedExcluded() {
+  const accountId = props.currentAccountId
+  if (!accountId)
+    return
+  try {
+    const key = BAG_SEED_EXCLUDED_PREFIX + String(accountId)
+    if (bagSeedExcluded.value.size === 0)
+      localStorage.removeItem(key)
+    else
+      localStorage.setItem(key, JSON.stringify([...bagSeedExcluded.value]))
+  }
+  catch {
+    // localStorage 不可用时忽略（仅损失跨会话记忆）
+  }
+}
 
 const strategySettings = ref(createStrategySettings())
 const automationSettings = ref(createAutomationSettings())
@@ -143,11 +178,17 @@ function applyPlan(data: any) {
 }
 
 const sortedBagSeeds = computed(() => {
+  const excluded = bagSeedExcluded.value
   const byId = new Map(props.bagSeeds.map(seed => [seed.seedId, seed]))
   return strategySettings.value.bagSeedPriority
     .map(id => byId.get(id))
-    .filter((seed): seed is BagSeedItem => !!seed)
+    .filter((seed): seed is BagSeedItem => !!seed && !excluded.has(Number(seed.seedId)))
 })
+
+// 「已跳过」区：被移除且不会被自动追加回来的种子
+const excludedBagSeeds = computed(() =>
+  props.bagSeeds.filter(seed => bagSeedExcluded.value.has(Number(seed.seedId))),
+)
 
 const strategyPreviewLabel = computed(() => {
   const option = props.plantingStrategyOptions.find(item => item.value === strategySettings.value.plantingStrategy)
@@ -261,6 +302,8 @@ async function resetPlan() {
 }
 
 function resetBagSeedPriority() {
+  bagSeedExcluded.value = new Set()
+  persistBagSeedExcluded()
   strategySettings.value.bagSeedPriority = props.bagSeeds.map(seed => seed.seedId)
 }
 
@@ -277,7 +320,53 @@ function moveBagSeed(seedId: number, direction: -1 | 1) {
 }
 
 function removeBagSeedPriority(seedId: number) {
-  strategySettings.value.bagSeedPriority = strategySettings.value.bagSeedPriority.filter(id => id !== seedId)
+  const numericSeedId = Number(seedId)
+  // 记入「已跳过」：确保新种子自动追加逻辑不会把它重新加回来
+  const nextExcluded = new Set(bagSeedExcluded.value)
+  nextExcluded.add(numericSeedId)
+  bagSeedExcluded.value = nextExcluded
+  persistBagSeedExcluded()
+  strategySettings.value.bagSeedPriority = strategySettings.value.bagSeedPriority.filter(id => id !== numericSeedId)
+}
+
+function restoreBagSeed(seedId: number) {
+  const numericSeedId = Number(seedId)
+  const nextExcluded = new Set(bagSeedExcluded.value)
+  nextExcluded.delete(numericSeedId)
+  bagSeedExcluded.value = nextExcluded
+  persistBagSeedExcluded()
+  if (Number.isInteger(numericSeedId) && numericSeedId > 0) {
+    const current = strategySettings.value.bagSeedPriority || []
+    if (!current.map(Number).includes(numericSeedId))
+      strategySettings.value.bagSeedPriority = [...current, numericSeedId]
+  }
+}
+
+/**
+ * 把背包中的新种子合并进优先列表（保留已有顺序 + 追加未列入且未跳过的）。
+ * 与首页策略面板的合并逻辑保持一致，避免「新种子不显示/用不到」。
+ */
+function mergeBagSeedsIntoPriority() {
+  if (!props.bagSeeds.length)
+    return
+  const excluded = bagSeedExcluded.value
+  const merged: number[] = []
+  const seen = new Set<number>()
+  for (const rawSeedId of strategySettings.value.bagSeedPriority || []) {
+    const seedId = Number(rawSeedId)
+    if (!seedId || seen.has(seedId) || excluded.has(seedId))
+      continue
+    seen.add(seedId)
+    merged.push(seedId)
+  }
+  for (const seed of props.bagSeeds) {
+    const seedId = Number(seed.seedId)
+    if (!seedId || seen.has(seedId) || excluded.has(seedId))
+      continue
+    seen.add(seedId)
+    merged.push(seedId)
+  }
+  strategySettings.value.bagSeedPriority = merged
 }
 
 function startBagSeedDrag(seedId: number) {
@@ -299,6 +388,21 @@ function dropBagSeed(seedId: number) {
 }
 
 onMounted(fetchPlan)
+
+// 切换账号时同步该账号的「已跳过」记忆（与首页策略面板共用同一份 localStorage）
+watch(() => props.currentAccountId, (accountId) => {
+  bagSeedExcluded.value = accountId ? readBagSeedExcluded(accountId) : new Set()
+}, { immediate: true })
+
+// 背包种子到位后合并新种子进优先列表（仅当处于背包优先策略且列表非空时增量合并）
+watch(() => props.bagSeeds, (seeds) => {
+  if (strategySettings.value.plantingStrategy !== 'bag_priority' || !seeds.length)
+    return
+  if (!strategySettings.value.bagSeedPriority || strategySettings.value.bagSeedPriority.length === 0)
+    strategySettings.value.bagSeedPriority = seeds.map(seed => Number(seed.seedId)).filter(id => id > 0)
+  else
+    mergeBagSeedsIntoPriority()
+}, { deep: false })
 
 // 当种植策略切到「背包种子优先」且已选中账号时，主动拉取背包种子
 watchEffect(() => {
@@ -385,11 +489,13 @@ watchEffect(() => {
       :strategy-preview-label="strategyPreviewLabel"
       :bag-seeds="bagSeeds"
       :sorted-bag-seeds="sortedBagSeeds"
+      :excluded-bag-seeds="excludedBagSeeds"
       :bag-seeds-loading="bagSeedsLoading"
       :bag-seeds-error="bagSeedsError"
       @reset-bag-seed-priority="resetBagSeedPriority"
       @move-bag-seed="moveBagSeed"
       @remove-bag-seed="removeBagSeedPriority"
+      @restore-bag-seed="restoreBagSeed"
       @start-bag-seed-drag="startBagSeedDrag"
       @drag-over-bag-seed="() => {}"
       @drop-bag-seed="dropBagSeed"
