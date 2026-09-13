@@ -73,6 +73,12 @@ async function fetchDogInfoRaw() {
 
 /**
  * 整理宠物数据为前端友好格式
+ *
+ * 【字段语义 —— 2026-09-14 真实账号实测确认】
+ *   owned=true,  activated=false → 仓库中已有，待激活
+ *   owned=false, activated=true  → 已激活（服务端在激活后把 owned 重置为 false！）
+ *   owned=false, activated=false → 尚未拥有
+ * 因此「我的宠物」判据 = owned || activated，绝不能用 owned 单字段。
  */
 function normalizeDogData(raw, configs = {}) {
   const dogCfg = configs.dogCfg || {};
@@ -82,6 +88,8 @@ function normalizeDogData(raw, configs = {}) {
     const cfg = dogCfg[id] || {};
     const activated = !!d.activated;
     const owned = !!d.owned;
+    // 已激活的宠物 owned 会被服务端重置为 false，二者取或才是「拥有」
+    const hasDog = owned || activated;
     const deployed = id === toNumber(raw.current_deployed_dog_id) && toNumber(raw.current_deployed_dog_id) > 0;
     return {
       id,
@@ -94,6 +102,7 @@ function normalizeDogData(raw, configs = {}) {
       price: toNumber(d.price) || toNumber(cfg.price) || 0,
       owned,
       activated,
+      hasDog,
       deployed,
       status: deployed ? 'deployed' : (activated ? 'active' : (owned ? 'idle' : 'locked')),
       expireTime: toNumber(d.expire_time),
@@ -303,5 +312,6 @@ module.exports = {
   addDogFood,
   activateDog,
   getProtectLogs,
+  normalizeDogData,
   extractVarintField,
 };

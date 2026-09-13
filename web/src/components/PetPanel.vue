@@ -21,6 +21,7 @@ interface DogItem {
   price: number
   owned: boolean
   activated: boolean
+  hasDog: boolean
   deployed: boolean
   status: string
   expireTime: number
@@ -51,10 +52,11 @@ const selectedDogId = ref(0)
 const feedCounts = ref<Record<number, number>>({})
 const lastClaim = ref(0)
 
-// 我的宠物（已拥有）
-const myDogs = computed(() => dogs.value.filter(d => d.owned))
+// 我的宠物（已拥有或已激活 —— 服务端激活后 owned 会重置为 false）
+const myDogs = computed(() => dogs.value.filter(d => d.hasDog))
 const activatedDogs = computed(() => myDogs.value.filter(d => d.activated))
-const lockedDogs = computed(() => dogs.value.filter(d => !d.owned && d.price > 0))
+// 未拥有且未激活的宠物（含可购买/活动获取）
+const lockedDogs = computed(() => dogs.value.filter(d => !d.hasDog))
 
 const deployedDog = computed(() => dogs.value.find(d => d.id === deployedDogId.value) || null)
 
