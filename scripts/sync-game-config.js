@@ -1002,6 +1002,33 @@ async function cmdRaw(opts) {
   return 0;
 }
 
+/**
+ * 自动同步（供服务端定时/启动调用）：检测 bundleVers 是否变化，变化才联网同步。
+ * 版本未变时零网络开销，只读本地文件。
+ * @param {{write?: boolean, doIcons?: boolean}} opts
+ * @returns {Promise<{ok: boolean, upToDate?: boolean, reason?: string, rcSync?: number, rcIcons?: number, bundleVers?: object}>}
+ */
+async function autoSync({ write = true, doIcons = true } = {}) {
+  const local = findLocalGameSettings();
+  if (!local) return { ok: false, reason: 'no-game-cache' };
+  const meta = readMeta() || {};
+  const norm = (vers) => JSON.stringify(
+    Object.keys(vers || {}).sort().map((k) => [k, vers[k]])
+  );
+  if (meta.bundleVers && norm(meta.bundleVers) === norm(local.bundleVers)) {
+    return { ok: true, upToDate: true, bundleVers: local.bundleVers };
+  }
+  const rcSync = await cmdSync({ write });
+  const rcIcons = doIcons ? await cmdIcons({ write }) : 0;
+  return {
+    ok: rcSync === 0 && rcIcons === 0,
+    upToDate: false,
+    rcSync,
+    rcIcons,
+    bundleVers: local.bundleVers,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // 入口
 // ---------------------------------------------------------------------------
@@ -1028,6 +1055,12 @@ async function main() {
     icons: cmdIcons,
     tables: cmdTables,
     raw: cmdRaw,
+    auto: async (o) => {
+      const r = await autoSync({ write: o.write !== false, doIcons: true });
+      if (r.reason === 'no-game-cache') { warn('✗ 找不到游戏本地缓存'); return 2; }
+      if (r.upToDate) { log('✓ 已是最新，无需同步'); return 0; }
+      return r.ok ? 0 : 1;
+    },
     all: async (o) => {
       const rc1 = await cmdSync(o);
       if (rc1 !== 0) return rc1;
@@ -1036,7 +1069,7 @@ async function main() {
   };
   if (!cmds[cmd]) {
     warn(`未知命令: ${cmd}`);
-    log('可用命令: check | sync | icons | tables | raw <表名> | all');
+    log('可用命令: check | sync | icons | tables | raw <表名> | all | auto');
     log('通用参数: --write 实际写入（默认 dry-run）');
     return 2;
   }
@@ -1069,5 +1102,6 @@ if (require.main === module) {
     detectImage,
     stableStringify,
     SYNC_TABLES,
+    autoSync,
   };
 }
