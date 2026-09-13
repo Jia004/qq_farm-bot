@@ -439,12 +439,20 @@ async function plantPrioritized2x2Crops(emptyLandIds, lands, accountId) {
  */
 async function plantSeeds(seedId, landIds, options = {}) {
   let planted = 0;
+  let lockedCount = 0;
+  let otherFailureCount = 0;
   const plantedLandIds = [];
   const occupiedSet = new Set();
   const maxPlantCount = Math.max(1, toNum(options.maxPlantCount) || 1) || Number.POSITIVE_INFINITY;
   const remainingLandIds = new Set(
     (Array.isArray(landIds) ? landIds : []).map(id => toNum(id)).filter(Boolean)
   );
+  // 与调用方共用的失败上下文：便于判断"整轮失败"并提前止损
+  const failureCtx = options.failureCtx || null;
+  // 同一错误连续重现次数：服务器若对「该种子当前不可种」返回该类错误，
+  // 则不应把 24 块地全试一遍（每次失败都会刷屏日志并拖慢循环）。
+  let consecutiveLockLikeFailures = 0;
+  const maxConsecutiveFailures = Math.max(2, toNum(options.maxConsecutiveFailures) || 4);
 
   for (const rawLandId of landIds) {
     const landId = toNum(rawLandId);
@@ -464,6 +472,7 @@ async function plantSeeds(seedId, landIds, options = {}) {
         : [landId];
 
       planted++;
+      consecutiveLockLikeFailures = 0;
       plantedLandIds.push(displayCtx.masterLandId || landId);
 
       for (const occId of occupiedIds) {
@@ -471,7 +480,29 @@ async function plantSeeds(seedId, landIds, options = {}) {
         remainingLandIds.delete(occId);
       }
     } catch (err) {
-      logWarn('种植', `土地#${landId} 失败: ${err.message}`);
+      const isLocked = isLockedPlantError(err);
+      lockedCount += Number(isLocked ? 1 : 0);
+      otherFailureCount += Number(isLocked ? 0 : 1);
+      if (failureCtx) {
+        if (isLocked) failureCtx.lockedCount = (failureCtx.lockedCount || 0) + 1;
+        else failureCtx.otherError = err.message;
+      }
+
+      consecutiveLockLikeFailures += 1;
+      if (consecutiveLockLikeFailures === 1) {
+        // 第一次失败保留完整原因，便于排查；后续同类失败降级为 debug 计数，
+        // 避免刷屏（原实现每块地一条 warn，单小时可达上万条）。
+        logWarn('种植', `土地#${landId} 失败: ${err.message}`, {
+          module: 'farm', event: '种植种子', result: isLocked ? 'land_locked' : 'error', seedId, landId,
+        });
+      }
+      if (consecutiveLockLikeFailures >= maxConsecutiveFailures) {
+        logWarn('种植', `种子 ${seedId} 连续 ${consecutiveLockLikeFailures} 次失败，本轮跳过剩余 ${remainingLandIds.size} 块地`, {
+          module: 'farm', event: '种植种子', result: 'seed_rejected_early_stop',
+          seedId, consecutiveFailures: consecutiveLockLikeFailures, lastError: err.message,
+        });
+        break;
+      }
     }
     // 多地种植时加间隔
     if (landIds.length > 1) await sleep(200, 400);
@@ -480,7 +511,9 @@ async function plantSeeds(seedId, landIds, options = {}) {
   return {
     planted,
     plantedLandIds,
-    occupiedLandIds: [...occupiedSet]
+    occupiedLandIds: [...occupiedSet],
+    lockedCount,
+    otherFailureCount,
   };
 }
 
@@ -569,6 +602,7 @@ async function plantFromBagSeeds(emptyLandIds, accountId = getCurrentAccountId()
   let totalOccupied = 0;
   const allPlantedIds = [];
   const batches = [];
+  const rejectedSeeds = [];
 
   for (const seed of availableSeeds) {
     if (remainingIds.length === 0) break;
@@ -593,7 +627,19 @@ async function plantFromBagSeeds(emptyLandIds, accountId = getCurrentAccountId()
       batches.push(`${seed.name  }x${  plantResult.planted}`);
     }
 
-    // 如果实际种植数少于请求数，避免误购商店种子
+    if (plantResult.planted === 0) {
+      // 该种子在当前条件下完全种不了（例如未解锁/等级不足/已被服务器拒绝）。
+      // 记下来并继续尝试下一颗种子——旧实现会因此整轮放弃导致"什么都种不了"。
+      rejectedSeeds.push(seed.name);
+      logWarn('种植', `背包种子 ${seed.name} 本次无法种植，已跳过（不影响后续种子）`, {
+        module: 'farm', event: '种植种子', result: 'seed_rejected',
+        seedId: seed.seedId, requested: maxCount, lockedCount: plantResult.lockedCount || 0,
+      });
+      continue;
+    }
+
+    // 部分成功：剩余空地存在但该种子数量不足/部分地块不可用。
+    // 此时不再回退商店买种，避免误购（保持原有防误购语义）。
     if (plantResult.planted < maxCount && remainingIds.length > 0) {
       fallbackAllowed = false;
       logWarn('种植', `背包种子 ${seed.name} 实际种植 ${plantResult.planted}/${maxCount}，为避免误购商店种子，本轮不执行第二优先策略`, {
@@ -607,6 +653,16 @@ async function plantFromBagSeeds(emptyLandIds, accountId = getCurrentAccountId()
     log('种植', `已按背包优先策略种植: ${batches.join('，')}`, {
       module: 'farm', event: '种植种子', result: 'ok',
       strategy: 'bag_priority', count: totalPlanted
+    });
+  }
+
+  // 全部种子都完全无法种植：说明不是"部分地块不可用"而是"这批种子整体不可用"，
+  // 同样不回退商店买种，避免误购；但把原因汇总出来便于排查。
+  if (totalPlanted === 0 && rejectedSeeds.length > 0) {
+    fallbackAllowed = false;
+    logWarn('种植', `背包中 ${rejectedSeeds.length} 颗种子均无法种植（${rejectedSeeds.join('，')}），本轮跳过背包策略`, {
+      module: 'farm', event: '种植种子', result: 'all_bag_seeds_rejected',
+      rejected: rejectedSeeds,
     });
   }
 

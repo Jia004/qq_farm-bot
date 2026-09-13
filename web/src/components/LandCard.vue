@@ -348,6 +348,11 @@ function getPlantSizeText(targetLand: any) {
   box-shadow:
     inset 0 2px 4px rgba(255, 255, 255, 0.6),
     inset 0 -1px 2px rgba(0, 0, 0, 0.1);
+  /* 卡顿治理：原为 filter: brightness() 无限动画——filter 会强制每帧重新
+     paint，24 张土地卡同时跑时是首页掉帧的主因之一。改为 transform 呼吸
+     （纯合成层，GPU 友好）并保留「活着」的观感。 */
+  will-change: transform;
+  transform-origin: center;
   animation: cute-pulse 2s ease-in-out infinite;
 }
 
@@ -359,17 +364,18 @@ function getPlantSizeText(targetLand: any) {
   right: 0;
   bottom: 0;
   background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.4) 50%, transparent 100%);
-  animation: shimmer 2s infinite;
+  /* 卡顿治理：shimmer 由 2s 改为 3.5s，并限制在合成层（transform 已足够） */
+  animation: shimmer 3.5s infinite;
   border-radius: 10px;
 }
 
 @keyframes cute-pulse {
   0%,
   100% {
-    filter: brightness(1) saturate(1);
+    transform: scaleY(1);
   }
   50% {
-    filter: brightness(1.1) saturate(1.1);
+    transform: scaleY(1.12);
   }
 }
 

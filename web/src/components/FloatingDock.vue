@@ -275,11 +275,14 @@ async function handleAccountRefreshed(accountId?: string) {
   transform: translateX(-50%);
   width: 360px;
   height: 140px;
-  background: radial-gradient(ellipse, color-mix(in srgb, var(--theme-primary) 22%, transparent), transparent 70%);
+  /* 卡顿治理：原用 filter: blur(36px) 做光晕——大半径模糊层常驻页面，
+     任何下方重绘都会触发它重新合成。改为多层 radial-gradient 直接画出
+     柔和光晕，视觉几乎一致但零模糊开销。 */
+  background:
+    radial-gradient(ellipse 60% 55% at 50% 55%, color-mix(in srgb, var(--theme-primary) 18%, transparent), transparent 72%),
+    radial-gradient(ellipse 42% 42% at 50% 60%, color-mix(in srgb, var(--theme-primary) 12%, transparent), transparent 78%);
   pointer-events: none;
   z-index: 999;
-  filter: blur(36px);
-  will-change: transform;
 }
 .floating-nav {
   pointer-events: auto;
@@ -289,9 +292,13 @@ async function handleAccountRefreshed(accountId?: string) {
   padding: 8px 12px;
   margin-bottom: 20px;
   border-radius: 28px;
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-  background: transparent;
+  /* 卡顿治理：常驻底部 + backdrop-filter 会在页面滚动时每帧重新模糊背景，
+     是首页滚动掉帧的主因之一。改为把玻璃色合成到主题底色上得到不透明
+     背景，观感接近玻璃但不触发 GPU 模糊合成。 */
+  background:
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--theme-glass, rgba(255,255,255,0.9)) 92%, var(--theme-bg, #ffffff) 8%),
+      color-mix(in srgb, var(--theme-glass, rgba(255,255,255,0.9)) 86%, var(--theme-bg, #ffffff) 14%));
   border: 1px solid rgba(15, 23, 42, 0.1);
   box-shadow: 0 8px 32px rgba(15, 23, 42, 0.16);
   animation: nav-slide-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;

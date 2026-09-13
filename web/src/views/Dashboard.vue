@@ -1514,41 +1514,37 @@ useIntervalFn(updateCountdowns, 1000)
 .overview-card {
   border-radius: 16px;
   overflow: visible;
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-  background: var(--theme-glass);
+  /* 卡顿治理：原为 backdrop-filter blur(20px)（大面积玻璃模糊，滚动/重渲染时
+     GPU 每帧重新合成，是首页掉帧主因之一）。改为等效不透明的渐变背景，
+     视觉基本一致但无模糊开销。 */
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--theme-glass) 88%, #ffffff 12%), var(--theme-glass));
   border: 1px solid var(--theme-border);
   box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.02);
   transition: box-shadow 0.2s;
 }
 
 .overview-card :deep(.ui-subtle-panel) {
-  background: var(--theme-glass) !important;
+  background: color-mix(in srgb, var(--theme-glass) 88%, var(--theme-bg) 12%) !important;
   border: 1px solid var(--theme-border) !important;
-  backdrop-filter: blur(12px) !important;
-  -webkit-backdrop-filter: blur(12px) !important;
 }
 
 .overview-panel .ui-card {
   border-radius: 16px;
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-  background: var(--theme-glass);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--theme-glass) 88%, #ffffff 12%), var(--theme-glass));
   border: 1px solid var(--theme-border);
 }
 
 .overview-panel .ui-card-elevated {
   border-radius: 16px;
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-  background: var(--theme-glass);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--theme-glass) 88%, #ffffff 12%), var(--theme-glass));
   border: 1px solid var(--theme-border);
 }
 
 .overview-panel .ui-subtle-panel {
-  background: color-mix(in srgb, var(--theme-bg) 40%, transparent) !important;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  background: color-mix(in srgb, var(--theme-glass) 70%, var(--theme-bg) 30%) !important;
   border: 1px solid var(--theme-border);
 }
 
@@ -1559,8 +1555,6 @@ useIntervalFn(updateCountdowns, 1000)
 .analytics-container :deep(.rounded-lg) {
   background: var(--theme-glass) !important;
   border: 1px solid var(--theme-border) !important;
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
 }
 
 .illustrated-container :deep(.bg-white),

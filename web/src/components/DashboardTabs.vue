@@ -73,9 +73,11 @@ function selectTab(key: string) {
   transform: translate(-50%, -50%);
   width: 80%;
   height: 100%;
-  background: radial-gradient(ellipse, color-mix(in srgb, var(--theme-primary) 10%, transparent) 0%, transparent 70%);
+  /* 卡顿治理：去掉 filter: blur(20px)，用多层径向渐变直接画柔和光晕 */
+  background:
+    radial-gradient(ellipse 55% 65% at 50% 50%, color-mix(in srgb, var(--theme-primary) 7%, transparent) 0%, transparent 72%),
+    radial-gradient(ellipse 80% 100% at 50% 50%, color-mix(in srgb, var(--theme-primary) 4%, transparent) 0%, transparent 80%);
   pointer-events: none;
-  filter: blur(20px);
 }
 
 .dashboard-tabs {
@@ -87,9 +89,9 @@ function selectTab(key: string) {
   padding: 4px;
   border-radius: 16px;
   position: relative;
-  background: var(--theme-glass);
-  backdrop-filter: blur(14px) saturate(150%);
-  -webkit-backdrop-filter: blur(14px) saturate(150%);
+  /* 卡顿治理：sticky 元素+backdrop-filter 会在滚动时持续触发 GPU 合成；
+     改为近不透明背景（视觉接近，无模糊开销） */
+  background: color-mix(in srgb, var(--theme-glass) 88%, var(--theme-bg) 12%);
   border: 1px solid var(--theme-border);
   box-shadow: 0 4px 16px color-mix(in srgb, var(--theme-primary) 6%, transparent), 0 1px 2px rgba(0,0,0,0.03);
 }

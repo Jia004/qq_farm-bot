@@ -243,10 +243,9 @@ onUnmounted(() => { pause(); pauseRefresh() })
   font-size: 12px;
   font-weight: 600;
   font-family: inherit;
-  background: var(--theme-glass);
+  /* 卡顿治理：去掉 blur(16px)（按钮组常驻农场面板），改为不透明合成背景 */
+  background: color-mix(in srgb, var(--theme-glass) 90%, var(--theme-bg, #ffffff) 10%);
   color: var(--theme-text);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
   transition: all 0.2s;
   user-select: none;
 }

@@ -95,9 +95,10 @@ function formatGiftProgress(gift: any) {
 <style scoped>
 .glass-card {
   border-radius: 16px;
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-  background: var(--theme-glass);
+  /* 卡顿治理：去掉 backdrop-filter blur(20px)，改为不透明合成背景 */
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--theme-glass) 92%, var(--theme-bg, #ffffff) 8%),
+    color-mix(in srgb, var(--theme-glass) 86%, var(--theme-bg, #ffffff) 14%));
   border: 1px solid var(--theme-border);
   overflow: hidden;
 }
@@ -135,9 +136,7 @@ function formatGiftProgress(gift: any) {
   padding: 12px;
   border-radius: 14px;
   border: 1px solid var(--theme-border);
-  background: var(--theme-glass);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background: color-mix(in srgb, var(--theme-glass) 88%, var(--theme-bg, #ffffff) 12%);
   transition: all 0.2s;
 }
 

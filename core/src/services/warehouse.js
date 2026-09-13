@@ -664,23 +664,40 @@ async function getBagSeeds() {
     const count = toNum(item && item.count);
     if (id <= 0 || count <= 0) continue;
 
-    const plant = getPlantBySeedId(id);
     const info = getItemById(id) || null;
     const interactionType = String(info && info.interaction_type || '').toLowerCase();
+    const plant = getPlantBySeedId(id);
 
-    // 统一以 Plant.json 为唯一判定依据
+    // 判定是否为种子：Plant.json 优先，缺失时回退 ItemInfo
+    // （本地 Plant.json 落后于服务器时，新种子不应被直接丢弃）
+    const looksLikeSeed = !!plant || isSeedItem(id) || interactionType === 'plant';
+    if (!looksLikeSeed) continue;
+
     if (!plant) {
-      // ItemInfo 看着像种子却没进 Plant.json → 说明配置表落后了，记录出来便于补表
-      if (isSeedItem(id) || interactionType === 'plant') {
-        if (missingInPlantJson.length < 20) missingInPlantJson.push(id);
-      }
-      continue;
+      // Plant.json 缺条目：记录便于补表，但不再丢弃——用 ItemInfo 兜底出条目
+      if (missingInPlantJson.length < 20) missingInPlantJson.push(id);
     }
 
-    const rawName = String(plant.name || `种子${id}`);
-    const name = rawName.endsWith('??') ? rawName.slice(0, -2) : rawName;
-    const requiredLevel = Math.max(0, Number(plant.land_level_need || 0) || Number(info && info.level || getSeedLevel(id) || 0));
-    const plantSize = Math.max(1, Number(plant.size || 1));
+    // 名称：Plant.json 优先；缺失时用 ItemInfo 的种子名（去掉末尾「种子」二字）
+    let name = '';
+    if (plant && plant.name) {
+      name = String(plant.name);
+    }
+    else if (info && info.name) {
+      name = String(info.name).replace(/种子$/, '');
+    }
+    if (!name) name = `种子${id}`;
+    if (name.endsWith('??')) name = name.slice(0, -2);
+
+    const requiredLevel = Math.max(
+      0,
+      Number(plant && plant.land_level_need || 0)
+      || Number(info && info.level || 0)
+      || getSeedLevel(id)
+      || 0,
+    );
+    // 占地：Plant.json 的 size；缺失时默认 1x1（2x2 种子（如哈哈南瓜）已在 Plant.json 内）
+    const plantSize = Math.max(1, Number(plant && plant.size) || 1);
 
     const existing = seedMap.get(id) || {
       seedId: id,
@@ -695,8 +712,8 @@ async function getBagSeeds() {
   }
 
   if (missingInPlantJson.length > 0) {
-    logWarn('仓库', `以下背包种子未收录进 Plant.json，已忽略: ${missingInPlantJson.join(',')}`, {
-      module: 'warehouse', event: 'bag_seed_detect', result: 'missing_in_plant_json', count: missingInPlantJson.length,
+    logWarn('仓库', `以下背包种子未收录进 Plant.json，已用 ItemInfo 兜底识别: ${missingInPlantJson.join(',')}`, {
+      module: 'warehouse', event: 'bag_seed_detect', result: 'fallback_to_item_info', count: missingInPlantJson.length,
     });
   }
 
