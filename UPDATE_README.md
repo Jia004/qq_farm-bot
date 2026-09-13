@@ -2,6 +2,20 @@
 
 这里记录最近更新了什么。
 
+## 2026-09-13（Aoluis1005 维护分支）
+
+### 新增功能
+
+- **官方配置全量同步工具 `scripts/sync-game-config.js`**：把「缺什么补什么」的按需维护，升级为「一次拉全官方数据」。
+  - 数据链路（已逆向验证）：游戏客户端缓存 `settings.json` 里的 `bundleVers` → 官方 CDN `config.<vers>.json` 资源清单 → 各配置表的 uuid + hash → `import/<uuid>.<hash>.json`（XOR 加密）→ 解密得到全量 JSON。
+  - 支持命令：`check`（对比官方与本地差异）、`sync`（拉取 ItemInfo / Plant / RoleLevel 全量数据，`--write` 写入）、`icons`（补全缺失物品图标，`--write` 下载）、`tables`（列出官方全部 103 张配置表）、`raw <表名>`（导出单张表）、`all`（数据 + 图标一起同步）。
+  - **合并策略保护本地数据**：官方字段优先覆盖；仅本地存在的字段（`price` / `price_id` 等）保留；官方已下架的本地独有条目保留不删；官方名称确认后自动清理 `_name_unknown` 占位标记。
+  - **图标补全双通道**：清单里直接可下载的 PNG 直接拉取；被打进图集的 sprite（`extraRes` 的 pack）自动建立图集帧索引并**纯 Node 裁剪**（无需外部图像库），支持 rotated 帧。
+  - **版本感知**：记录上次同步的 `bundleVers` 至 `core/src/gameConfig/.sync-meta.json`；版本未变时 `check` 直接提示「已是最新」。
+  - 后续官方更新流程：**打开一次游戏客户端**（客户端自动刷新缓存的版本号）→ 运行 `node scripts/sync-game-config.js check` 查看差异 → `sync --write` + `icons --write` 落地。
+  - 本次同步结果：`ItemInfo.json` 716 → 775 条（官方新增 59 条，含鹊羽/天气瓶/比熊乐园/头像框等）、`Plant.json` 255 → 270 条（新增狗尾草、小红花、芦苇、枸杞、寒兰、金币果、经验蘑菇等 8 个新作物及其黄金变种）、物品图标补全 145+ 个。
+  - 配套单元测试 `core/test/sync-game-config.test.js`（14 例：XOR 解密 / UUID 解码 / 合并策略 / PNG 编解码与图集裁剪）。
+
 ## 2026-09-12（Aoluis1005 维护分支）
 
 ### 新增功能

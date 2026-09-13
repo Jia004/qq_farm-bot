@@ -1,0 +1,41 @@
+{
+  "bundleVers": {
+    "aiHead": "3e212",
+    "audio": "478ae",
+    "delayRes": "14dd8",
+    "extraRes": "32dfb",
+    "internal": "f94b5",
+    "main": "a576f",
+    "mainscene": "d5852",
+    "petdog": "ca8c4",
+    "plant": "f2f89",
+    "resources": "bfe90",
+    "weather": "eb03a"
+  },
+  "gameDir": "1112386029_3_86eee58e10ed64907dd7dc098bc10228",
+  "settingsFile": "settings.2af05.json",
+  "tables": [
+    {
+      "table": "ItemInfo",
+      "before": 716,
+      "after": 775,
+      "added": 59,
+      "updated": 117
+    },
+    {
+      "table": "Plant",
+      "before": 255,
+      "after": 270,
+      "added": 15,
+      "updated": 3
+    },
+    {
+      "table": "RoleLevel",
+      "before": 200,
+      "after": 200,
+      "added": 0,
+      "updated": 0
+    }
+  ],
+  "updatedAt": "2026-09-13T14:09:23.212Z"
+}
