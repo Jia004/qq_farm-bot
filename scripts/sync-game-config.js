@@ -824,12 +824,19 @@ async function cmdIcons(opts) {
   //   A. ItemInfo 条目有 icon_res（如 gui/texture/icon/icon_xxx/spriteFrame）
   //   B. Plant.json 种子的 asset_name（Crop_XXX → Crop_XXX_Seed，走 asset 回退）
   const need = [];
+  const dynamicSkip = []; // 动态合成资源（官方客户端运行时合成，CDN 无静态资源）
   for (const it of items) {
     const id = Number(it.id);
     if (!id || haveIds.has(id)) continue;
     const ir = String(it.icon_res || '');
     const m = ir.match(/\/([^/]+)\/spriteFrame$/);
     if (!m) continue;
+    // 种子解锁卡等用的是 icon_card_crop_* —— 客户端「卡面底图 + 种子图」动态合成，
+    // 全量扫描 234 个图集与所有 bundle 清单均无此静态资源；前端靠 asset_name 回退显示
+    if (/icon_card_crop_/.test(m[1])) {
+      dynamicSkip.push({ id, name: it.name || '', sprite: m[1] });
+      continue;
+    }
     need.push({ id, name: it.name || '', sprite: m[1], kind: 'item' });
   }
   // 种子图标：从 ItemInfo 的「种子」条目取 asset_name（Crop_XXX / gold/Crop_XXX）
@@ -858,8 +865,13 @@ async function cmdIcons(opts) {
     need.push({ id, name: it.name || '', sprite, kind: 'seed' });
   }
 
-  log(`ItemInfo ${items.length} 条 + Plant ${plants.length} 种；需补图标 ${need.length} 个\n`);
-  if (!need.length) { log('✓ 所有可下载图标均已就绪'); return 0; }
+  log(`ItemInfo ${items.length} 条 + Plant ${plants.length} 种；需补图标 ${need.length} 个` +
+    (dynamicSkip.length ? `（另有 ${dynamicSkip.length} 个动态合成资源跳过：客户端运行时合成，CDN 无静态图，前端已按 asset_name 回退显示）` : '') + '\n');
+  if (!need.length) {
+    log('✓ 所有可下载图标均已就绪');
+    if (dynamicSkip.length) log(`  （${dynamicSkip.length} 个动态合成资源：如「种子解锁卡」，前端显示为对应种子图）`);
+    return 0;
+  }
 
   for (const n of need.slice(0, 30)) log(`  ${n.id} ${n.name}  <- ${n.sprite}${n.kind === 'seed' ? ' (种子)' : ''}`);
   if (need.length > 30) log(`  ... 其余 ${need.length - 30} 条`);
