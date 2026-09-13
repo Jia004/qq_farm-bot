@@ -53,10 +53,12 @@ const feedCounts = ref<Record<number, number>>({})
 const lastClaim = ref(0)
 
 // 我的宠物（已拥有或已激活 —— 服务端激活后 owned 会重置为 false）
-const myDogs = computed(() => dogs.value.filter(d => d.hasDog))
+// 兜底：兼容未含 hasDog 字段的旧响应
+const isMine = (d: DogItem) => d.hasDog ?? (d.owned || d.activated)
+const myDogs = computed(() => dogs.value.filter(isMine))
 const activatedDogs = computed(() => myDogs.value.filter(d => d.activated))
 // 未拥有且未激活的宠物（含可购买/活动获取）
-const lockedDogs = computed(() => dogs.value.filter(d => !d.hasDog))
+const lockedDogs = computed(() => dogs.value.filter(d => !isMine(d)))
 
 const deployedDog = computed(() => dogs.value.find(d => d.id === deployedDogId.value) || null)
 
