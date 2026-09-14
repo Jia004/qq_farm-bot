@@ -340,6 +340,7 @@ A：部分 Windows 环境下 Node 的 DNS 解析器读不到系统 DNS。本项�
 本项目为**二次修改（二改）维护分支**，基于以下开源项目：
 
 - 上游基础：[cwser/qq-farm-bot-private](https://github.com/cwser/qq-farm-bot-private)
+-         Aoluis1005/qq-farm-bot（https://github.com/Aoluis1005/qq-farm-bot）
 - UI 基础：[Penty-d/qq-farm-bot-ui](https://github.com/Penty-d/qq-farm-bot-ui)
 - 核心功能：[linguo2625469/qq-farm-bot](https://github.com/linguo2625469/qq-farm-bot)
 - 部分功能：[QianChenJun/qq-farm-bot](https://github.com/QianChenJun/qq-farm-bot)
